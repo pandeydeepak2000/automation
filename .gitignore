@@ -1,0 +1,15 @@
+# Confidential Documents & Credentials (Keep Local Only)
+SYSTEM_SRS_DOCUMENTATION.md
+srs_document.html
+*.pdf
+AmbitionHost_Master_Control_SRS_Documentation.pdf
+confidential/
+.env
+
+uploads/*
+!uploads/.gitkeep
+!uploads/.htaccess
+*.log
+.DS_Store
+Thumbs.db
+
