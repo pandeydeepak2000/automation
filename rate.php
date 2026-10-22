@@ -37,7 +37,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AmbitionHost · Customer Feedback</title>
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<title>Customer Feedback</title>
 <style>
   body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:#f1f5f9;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px;color:#0f172a}
   .card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;max-width:500px;width:100%;padding:32px 28px;box-shadow:0 12px 32px rgba(15,23,42,.08);text-align:center;box-sizing:border-box}

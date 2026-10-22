@@ -214,7 +214,8 @@ $snapshots = $pdo->query("SELECT * FROM whmcs_daily_snapshots ORDER BY snapshot_
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AmbitionHost OS · Analytics & MRR Intelligence</title>
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<title>Control Room · Analytics & MRR Intelligence</title>
 <style>
   body{font-family:Inter,system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;margin:0;padding:24px}
   .wrap{max-width:1300px;margin:auto}

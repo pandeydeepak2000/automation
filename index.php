@@ -55,7 +55,8 @@ $MODULES = [
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AmbitionHost OS · 25-Module Master Control</title>
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<title>Control Room · Operations Center</title>
 <style>
 :root{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1e293b;background:#f1f5f9}
 *{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;background:#fff;color:inherit}

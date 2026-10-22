@@ -60,7 +60,8 @@ if (empty($_SESSION['user_id'])) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AmbitionHost OS · Staff Login</title>
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<title>Control Room · Login</title>
 <style>
   body{font-family:Inter,system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px}
   .box{background:#1e293b;padding:32px 28px;border-radius:14px;width:100%;max-width:390px;border:1px solid #334155;box-shadow:0 10px 25px rgba(0,0,0,.35)}
@@ -71,12 +72,11 @@ if (empty($_SESSION['user_id'])) {
   button{background:#2563eb;color:#fff;border:0;font-weight:700;cursor:pointer;margin-top:14px;transition:background .15s}
   button:hover{background:#1d4ed8}
   .err{background:rgba(239,68,68,.15);border:1px solid #ef4444;color:#fca5a5;padding:10px;border-radius:8px;font-size:13px;margin-bottom:12px}
-  code{background:#0f172a;padding:2px 5px;border-radius:4px;color:#38bdf8;font-family:monospace}
 </style>
 </head>
 <body>
 <div class="box">
-  <h2>🔒 AmbitionHost OS Login</h2>
+  <h2>🔒 Control Room Login</h2>
   <small>अपना ऑफिशियल ईमेल और पासवर्ड डालें</small>
   <?php if ($loginError): ?>
     <div class="err"><?=$loginError?></div>
@@ -84,23 +84,11 @@ if (empty($_SESSION['user_id'])) {
   <form method="post" action="index.php">
     <input type="hidden" name="login_action" value="1">
     <label style="font-size:12px;color:#cbd5e1">Staff Email</label>
-    <input type="email" name="email" id="emailInput" placeholder="aarav@ambitionhost.in" required autofocus>
+    <input type="email" name="email" id="emailInput" placeholder="admin@example.com" required autocomplete="email">
     <label style="font-size:12px;color:#cbd5e1">Password</label>
-    <input type="password" name="password" id="passInput" placeholder="••••••••" required>
+    <input type="password" name="password" id="passInput" placeholder="••••••••" required autocomplete="current-password">
     <button type="submit">Secure Login →</button>
   </form>
-
-  <div style="margin-top:22px;padding-top:16px;border-top:1px solid #334155;font-size:12px;color:#94a3b8">
-    <strong style="color:#cbd5e1;display:block;margin-bottom:8px">👥 Team Member Logins (Default: <code>Ambition@2026</code>):</strong>
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <div style="cursor:pointer" onclick="document.getElementById('emailInput').value='aarav@ambitionhost.in';document.getElementById('passInput').value='Ambition@2026'">👑 <b>Aarav:</b> <code>aarav@ambitionhost.in</code></div>
-      <div style="cursor:pointer" onclick="document.getElementById('emailInput').value='chandrika@ambitionhost.in';document.getElementById('passInput').value='Ambition@2026'">💼 <b>Chandrika:</b> <code>chandrika@ambitionhost.in</code></div>
-      <div style="cursor:pointer" onclick="document.getElementById('emailInput').value='priya@ambitionhost.in';document.getElementById('passInput').value='Ambition@2026'">🌐 <b>Priya:</b> <code>priya@ambitionhost.in</code></div>
-      <div style="cursor:pointer" onclick="document.getElementById('emailInput').value='sanju@ambitionhost.in';document.getElementById('passInput').value='Ambition@2026'">💳 <b>Sanju:</b> <code>sanju@ambitionhost.in</code></div>
-      <div style="cursor:pointer" onclick="document.getElementById('emailInput').value='deepak@ambitionhost.in';document.getElementById('passInput').value='Ambition@2026'">🛡️ <b>Deepak:</b> <code>deepak@ambitionhost.in</code></div>
-    </div>
-    <small style="display:block;margin-top:8px;color:#64748b">(किसी भी नाम पर क्लिक करने से ईमेल व पासवर्ड स्वतः भर जाएंगे)</small>
-  </div>
 </div>
 </body>
 </html>
