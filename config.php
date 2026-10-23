@@ -100,6 +100,26 @@ function db(): PDO {
                   PRIMARY KEY (`id`),
                   KEY `ip_idx` (`ip_address`, `attempted_at`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+                CREATE TABLE IF NOT EXISTS `whmcs_items_cache` (
+                  `id` int(11) NOT NULL AUTO_INCREMENT,
+                  `item_type` enum('hosting','domain') NOT NULL DEFAULT 'hosting',
+                  `whmcs_item_id` int(11) NOT NULL,
+                  `client_id` int(11) NOT NULL,
+                  `domain` varchar(255) DEFAULT NULL,
+                  `package_name` varchar(150) DEFAULT NULL,
+                  `billing_cycle` varchar(50) DEFAULT 'Monthly',
+                  `recurring_amount` decimal(10,2) DEFAULT 0.00,
+                  `status` varchar(50) DEFAULT 'Active',
+                  `reg_date` date DEFAULT NULL,
+                  `next_due_date` date DEFAULT NULL,
+                  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  PRIMARY KEY (`id`),
+                  UNIQUE KEY `item_unique` (`item_type`, `whmcs_item_id`),
+                  KEY `status` (`status`),
+                  KEY `client_id` (`client_id`),
+                  KEY `domain` (`domain`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             ");
         } catch (Throwable $e) {}
 

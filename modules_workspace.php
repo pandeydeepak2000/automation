@@ -51,35 +51,109 @@ if ($activeModId === 2):
   $qClient = trim($_GET['search_client'] ?? '');
   $clientRows = [];
   if ($qClient !== '') {
-      $cStmt = $pdo->prepare("SELECT * FROM whmcs_items_cache WHERE domain LIKE ? OR package_name LIKE ? OR client_id = ? LIMIT 30");
+      $cStmt = $pdo->prepare("SELECT * FROM whmcs_items_cache WHERE domain LIKE ? OR package_name LIKE ? OR client_id = ? LIMIT 50");
       $cStmt->execute(["%$qClient%", "%$qClient%", (int)$qClient]);
       $clientRows = $cStmt->fetchAll();
   } else {
-      $clientRows = $pdo->query("SELECT * FROM whmcs_items_cache ORDER BY id DESC LIMIT 20")->fetchAll();
+      $clientRows = $pdo->query("SELECT * FROM whmcs_items_cache ORDER BY id DESC LIMIT 25")->fetchAll();
   }
+
+  $totalHostingCount = (int)$pdo->query("SELECT COUNT(*) FROM whmcs_items_cache WHERE item_type = 'hosting' AND status = 'Active'")->fetchColumn();
+  $totalDomainCount  = (int)$pdo->query("SELECT COUNT(*) FROM whmcs_items_cache WHERE item_type = 'domain' AND status = 'Active'")->fetchColumn();
+  $due30Count        = (int)$pdo->query("SELECT COUNT(*) FROM whmcs_items_cache WHERE status = 'Active' AND next_due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)")->fetchColumn();
 ?>
 <div class="box" style="border-left:4px solid #2563eb">
-  <h3>🔍 915 Active Customers & Service History Search</h3>
-  <form method="get" class="toolbar">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+    <div>
+      <h3 style="margin:0;font-size:18px">👥 Module 02: Customers & Service History Search</h3>
+      <small style="color:#64748b">915 Active Hosting Accounts और हर ग्राहक की रजिस्ट्रेशन से लेकर टिकट्स तक की पूरी कुंडली।</small>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn-primary" style="background:#059669;border-color:#059669" onclick="syncWhmcsCache()">🔄 Sync Live WHMCS Services</button>
+      <a class="btn-dark" href="<?=htmlspecialchars(whmcs_deep_link('clients'))?>" target="_blank">WHMCS Clients ↗</a>
+    </div>
+  </div>
+
+  <!-- STAT CARDS -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0">
+    <div style="background:#eff6ff;padding:12px 14px;border-radius:8px;border:1px solid #bfdbfe">
+      <small style="color:#1e40af;font-weight:700">Active Hosting Clients</small>
+      <strong style="display:block;font-size:22px;color:#2563eb;margin-top:2px"><?=$totalHostingCount?> Services</strong>
+      <small>Shared, Cloud, VPS & Resellers</small>
+    </div>
+    <div style="background:#f0fdf4;padding:12px 14px;border-radius:8px;border:1px solid #bbf7d0">
+      <small style="color:#166534;font-weight:700">Active Managed Domains</small>
+      <strong style="display:block;font-size:22px;color:#16a34a;margin-top:2px"><?=$totalDomainCount?> Domains</strong>
+      <small>Across 26 Registrar Vault Accounts</small>
+    </div>
+    <div style="background:#fffbeb;padding:12px 14px;border-radius:8px;border:1px solid #fef3c7">
+      <small style="color:#92400e;font-weight:700">Upcoming 30-Day Renewals</small>
+      <strong style="display:block;font-size:22px;color:#d97706;margin-top:2px"><?=$due30Count?> Due</strong>
+      <small>Chandrika 30-15-7-3-1 Pipeline</small>
+    </div>
+  </div>
+
+  <!-- SEARCH BAR -->
+  <form method="get" class="toolbar" style="margin-bottom:14px">
     <input type="hidden" name="m" value="2">
-    <input name="search_client" value="<?=htmlspecialchars($qClient)?>" placeholder="Domain / Plan / Client ID दर्ज करें..." style="flex:1">
+    <input name="search_client" value="<?=htmlspecialchars($qClient)?>" placeholder="Domain Name / Hosting Plan / Client ID दर्ज करें (उदा. example.com)..." style="flex:1">
     <button type="submit" class="btn-primary">खोजें 🔍</button>
     <?php if ($qClient): ?><a href="index.php?m=2" class="btn-dark">Reset</a><?php endif; ?>
   </form>
+
   <table>
-    <thead><tr><th>Client ID</th><th>Type & Plan</th><th>Domain</th><th>Billing / Cycle</th><th>Status</th><th>WHMCS Action</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Client ID</th>
+        <th>Type & Plan</th>
+        <th>Domain Name</th>
+        <th>Billing / Amount</th>
+        <th>Next Due Date</th>
+        <th>Status</th>
+        <th>WHMCS Deep-Link</th>
+      </tr>
+    </thead>
     <tbody>
       <?php if (empty($clientRows)): ?>
-        <tr><td colspan="6" style="text-align:center;color:#64748b;padding:20px">कोई रिकॉर्ड नहीं मिला। WHMCS API सिंक करें या दूसरा सर्च टर्म डालें।</td></tr>
+        <tr>
+          <td colspan="7" style="text-align:center;color:#64748b;padding:24px">
+            💡 अभी लोकल कैश खाली है। ऊपर दिए गए <b>🔄 Sync Live WHMCS Services</b> बटन पर क्लिक करें ताकि WHMCS से सभी एक्टिव क्लाइंट्स व डोमेन्स फेच हो जाएं!
+          </td>
+        </tr>
       <?php else: foreach ($clientRows as $cr): ?>
         <tr>
-          <td><b>#<?=$cr['client_id']?></b></td>
-          <td><span class="pill pill-blue"><?=strtoupper($cr['item_type'])?></span><br><small><?=htmlspecialchars((string)$cr['package_name'])?></small></td>
-          <td><b><?=htmlspecialchars((string)$cr['domain'])?></b></td>
-          <td>₹<?=$cr['recurring_amount']?> / <small><?=$cr['billing_cycle']?></small></td>
-          <td><span class="pill <?=$cr['status']==='Active'?'pill-green':'pill-red'?>"><?=$cr['status']?></span></td>
           <td>
-            <a href="<?=htmlspecialchars(whmcs_deep_link('client', $cr['client_id']))?>" target="_blank" class="btn-dark" style="font-size:11px;padding:4px 8px">Client ↗</a>
+            <a href="<?=htmlspecialchars(whmcs_deep_link('client', $cr['client_id']))?>" target="_blank" style="color:#2563eb;font-weight:700">
+              #<?=$cr['client_id']?> ↗
+            </a>
+          </td>
+          <td>
+            <span class="pill <?=$cr['item_type']==='hosting'?'pill-blue':'pill-dark'?>"><?=strtoupper($cr['item_type'])?></span><br>
+            <small style="color:#334155;font-weight:600"><?=htmlspecialchars((string)$cr['package_name'])?></small>
+          </td>
+          <td>
+            <a href="https://<?=htmlspecialchars((string)$cr['domain'])?>" target="_blank" style="color:#0f172a;font-weight:600;text-decoration:none">
+              <?=htmlspecialchars((string)$cr['domain'])?>
+            </a>
+          </td>
+          <td>
+            <b style="color:#16a34a">₹<?=number_format((float)$cr['recurring_amount'], 2)?></b><br>
+            <small style="color:#64748b"><?=htmlspecialchars((string)$cr['billing_cycle'])?></small>
+          </td>
+          <td>
+            <small style="color:#475569"><?=($cr['next_due_date'] ? date('d M Y', strtotime($cr['next_due_date'])) : 'N/A')?></small>
+          </td>
+          <td>
+            <span class="pill <?=$cr['status']==='Active'?'pill-green':($cr['status']==='Suspended'?'pill-red':'pill-dark')?>">
+              <?=$cr['status']?>
+            </span>
+          </td>
+          <td>
+            <?php if ($cr['item_type'] === 'hosting'): ?>
+              <a href="https://www.ambitionhost.in/user/devokedev/clientsservices.php?id=<?=$cr['whmcs_item_id']?>" target="_blank" class="btn-dark" style="font-size:11px;padding:4px 8px">Service ↗</a>
+            <?php else: ?>
+              <a href="https://www.ambitionhost.in/user/devokedev/clientsdomains.php?id=<?=$cr['whmcs_item_id']?>" target="_blank" class="btn-dark" style="font-size:11px;padding:4px 8px">Domain ↗</a>
+            <?php endif; ?>
           </td>
         </tr>
       <?php endforeach; endif; ?>

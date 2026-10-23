@@ -383,6 +383,16 @@ try {
             }
             break;
 
+        case 'sync_whmcs_cache':
+            require_once __DIR__ . '/whm_whmcs_sync.php';
+            $r = AmbitionInfraSync::syncWhmcsItemsCache(500);
+            echo json_encode([
+                'status' => 'ok',
+                'message' => "✅ WHMCS Sync Complete! Total {$r['synced_count']} hosting services & domains cached.",
+                'data' => $r
+            ]);
+            break;
+
         // 12. Change Email or Password (Owner/Admin can change anyone; Staff can change own)
         case 'change_credentials':
             $targetUserId = (int)($_POST['target_user_id'] ?? $_SESSION['user_id']);

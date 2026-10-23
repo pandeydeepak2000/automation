@@ -670,6 +670,20 @@ async function testWhmcsConn() {
   alert(r.message || 'WHMCS Connection Test Completed');
 }
 
+async function syncWhmcsCache() {
+  const btn = window.event ? window.event.target : null;
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Syncing WHMCS...'; btn.disabled = true; }
+  const fd = new FormData();
+  fd.append('action', 'sync_whmcs_cache');
+  const r = await postApi(fd);
+  if (btn) { btn.textContent = oldText; btn.disabled = false; }
+  if (r.status === 'ok') {
+    alert(r.message || 'WHMCS Synced!');
+    location.reload();
+  }
+}
+
 const payForm = document.getElementById('paymentForm');
 if (payForm) payForm.onsubmit = async (e) => {
   e.preventDefault(); await postApi(new FormData(payForm)); location.reload();

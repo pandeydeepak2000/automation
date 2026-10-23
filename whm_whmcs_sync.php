@@ -300,6 +300,82 @@ class AmbitionInfraSync {
         $decoded = json_decode((string)$res, true);
         return $decoded ?: ['result' => 'error', 'raw' => $res];
     }
+
+    /**
+     * Sync Active Hosting Products and Domains into whmcs_items_cache
+     */
+    public static function syncWhmcsItemsCache(int $limit = 500): array {
+        $pdo = db();
+        $synced = 0;
+
+        // 1. Fetch Hosting Products
+        $pRes = self::callWhmcs('GetClientsProducts', ['limitnum' => $limit]);
+        if (!empty($pRes['products']['product'])) {
+            $ins = $pdo->prepare("
+                INSERT INTO whmcs_items_cache (
+                    item_type, whmcs_item_id, client_id, domain, package_name,
+                    billing_cycle, recurring_amount, status, reg_date, next_due_date, updated_at
+                ) VALUES ('hosting', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ON DUPLICATE KEY UPDATE
+                    client_id = VALUES(client_id),
+                    domain = VALUES(domain),
+                    package_name = VALUES(package_name),
+                    billing_cycle = VALUES(billing_cycle),
+                    recurring_amount = VALUES(recurring_amount),
+                    status = VALUES(status),
+                    next_due_date = VALUES(next_due_date),
+                    updated_at = NOW()
+            ");
+
+            foreach ($pRes['products']['product'] as $p) {
+                $ins->execute([
+                    (int)($p['id'] ?? 0),
+                    (int)($p['clientid'] ?? 0),
+                    (string)($p['domain'] ?? ''),
+                    (string)($p['name'] ?? ($p['groupname'] ?? 'Hosting Plan')),
+                    (string)($p['billingcycle'] ?? 'Monthly'),
+                    (float)($p['recurringamount'] ?? 0),
+                    (string)($p['status'] ?? 'Active'),
+                    !empty($p['regdate']) ? $p['regdate'] : null,
+                    !empty($p['nextduedate']) ? $p['nextduedate'] : null
+                ]);
+                $synced++;
+            }
+        }
+
+        // 2. Fetch Domains
+        $dRes = self::callWhmcs('GetClientsDomains', ['limitnum' => $limit]);
+        if (!empty($dRes['domains']['domain'])) {
+            $insD = $pdo->prepare("
+                INSERT INTO whmcs_items_cache (
+                    item_type, whmcs_item_id, client_id, domain, package_name,
+                    billing_cycle, recurring_amount, status, reg_date, next_due_date, updated_at
+                ) VALUES ('domain', ?, ?, ?, 'Domain Registration', 'Annually', ?, ?, ?, ?, NOW())
+                ON DUPLICATE KEY UPDATE
+                    client_id = VALUES(client_id),
+                    domain = VALUES(domain),
+                    recurring_amount = VALUES(recurring_amount),
+                    status = VALUES(status),
+                    next_due_date = VALUES(next_due_date),
+                    updated_at = NOW()
+            ");
+
+            foreach ($dRes['domains']['domain'] as $d) {
+                $insD->execute([
+                    (int)($d['id'] ?? 0),
+                    (int)($d['userid'] ?? 0),
+                    (string)($d['domainname'] ?? ''),
+                    (float)($d['recurringamount'] ?? 0),
+                    (string)($d['status'] ?? 'Active'),
+                    !empty($d['registrationdate']) ? $d['registrationdate'] : null,
+                    !empty($d['nextduedate']) ? $d['nextduedate'] : null
+                ]);
+                $synced++;
+            }
+        }
+
+        return ['status' => 'ok', 'synced_count' => $synced];
+    }
 }
 
 // Global Procedural Helper for WHMCS API Calls
