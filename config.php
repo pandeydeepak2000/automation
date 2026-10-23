@@ -92,6 +92,14 @@ function db(): PDO {
                   PRIMARY KEY (`id`),
                   KEY `ticket_id` (`ticket_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+                CREATE TABLE IF NOT EXISTS `login_attempts` (
+                  `id` int(11) NOT NULL AUTO_INCREMENT,
+                  `ip_address` varchar(45) NOT NULL,
+                  `attempted_at` int(11) NOT NULL,
+                  PRIMARY KEY (`id`),
+                  KEY `ip_idx` (`ip_address`, `attempted_at`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             ");
         } catch (Throwable $e) {}
 
