@@ -25,10 +25,14 @@ if ($view === 'brainstorm' && !$isAdmin) {
 }
 
 $activeLlm = get_sys_setting('active_llm_provider', 'deepseek');
-$nStmt = $pdo->prepare("SELECT * FROM notifications WHERE recipient = ? ORDER BY id DESC LIMIT 40");
-$nStmt->execute([$currentUser]);
-$myNotices = $nStmt->fetchAll();
-$unreadCount = count(array_filter($myNotices, fn($n) => (int)$n['is_read'] === 0));
+$myNotices = [];
+$unreadCount = 0;
+try {
+    $nStmt = $pdo->prepare("SELECT * FROM notifications WHERE recipient = ? ORDER BY id DESC LIMIT 40");
+    $nStmt->execute([$currentUser]);
+    $myNotices = $nStmt->fetchAll();
+    $unreadCount = count(array_filter($myNotices, fn($n) => (int)$n['is_read'] === 0));
+} catch (Throwable $e) {}
 
 $MODULES = [
     1  => ['Overview & Pending Tasks',            'Business',   'आपके डिपार्टमेंट के आज के ज़रूरी काम और पूरी टीम के Pending Tasks (Read-Only)।', whmcs_deep_link('pending_orders')],

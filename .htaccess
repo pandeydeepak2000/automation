@@ -1,10 +1,10 @@
-# Block search engines from indexing any file on this domain
+# Block search engines from indexing
 <IfModule mod_headers.c>
     Header set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
 </IfModule>
 
-# Protect sensitive files
-<FilesMatch "(\.env|\.git|\.sql|\.md|\.log|config\.php)$">
+# Protect sensitive documents and logs from direct web access
+<FilesMatch "(\.env|\.sql|\.md|\.log)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
@@ -14,5 +14,4 @@
     </IfModule>
 </FilesMatch>
 
-# Allow normal access to index.php and api.php
 DirectoryIndex index.php
