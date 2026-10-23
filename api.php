@@ -329,8 +329,20 @@ try {
             } elseif ($wSub === 'sync_server') {
                 require_once __DIR__ . '/whm_whmcs_sync.php';
                 $sid = (int)($_POST['server_id'] ?? 0);
-                $res = AmbitionInfraSync::syncWhmServer($sid);
-                echo json_encode(['status' => 'ok', 'data' => $res]);
+                try {
+                    $res = AmbitionInfraSync::syncWhmServer($sid);
+                    if (($res['status'] ?? '') === 'error') {
+                        echo json_encode(['status' => 'error', 'message' => $res['error'] ?? 'WHM Sync Failed']);
+                    } else {
+                        echo json_encode([
+                            'status' => 'ok',
+                            'message' => "✅ Server Synced! Total: {$res['total_accounts']}, Active: {$res['active_accounts']}, Suspended: {$res['suspended_accounts']}, Load: {$res['load_avg']}",
+                            'data' => $res
+                        ]);
+                    }
+                } catch (Throwable $e) {
+                    echo json_encode(['status' => 'error', 'message' => 'Sync Error: ' . $e->getMessage()]);
+                }
             } elseif ($wSub === 'test_server') {
                 require_once __DIR__ . '/whm_whmcs_sync.php';
                 $host = trim($_POST['hostname'] ?? '');

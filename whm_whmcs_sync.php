@@ -28,9 +28,10 @@ class AmbitionInfraSync {
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYPEER => false, // Allow connection via direct IP or self-signed WHM cert
             CURLOPT_SSL_VERIFYHOST => 0,
-            CURLOPT_TIMEOUT => 20,
+            CURLOPT_TIMEOUT => 25,
             CURLOPT_HTTPHEADER => [
                 'Authorization: whm ' . trim($username) . ':' . trim($apiToken)
             ]
@@ -42,12 +43,12 @@ class AmbitionInfraSync {
         curl_close($ch);
 
         if ($err) {
-            return ['status' => 0, 'error' => "cURL Error: {$err}"];
+            return ['status' => 0, 'error' => "cURL Error ({$url}): {$err}"];
         }
 
         $decoded = json_decode((string)$response, true);
         if (!$decoded) {
-            return ['status' => 0, 'error' => "HTTP {$httpCode}: Invalid JSON returned from WHM", 'raw' => $response];
+            return ['status' => 0, 'error' => "HTTP {$httpCode}: WHM did not return JSON. (Response: " . substr(strip_tags((string)$response), 0, 150) . ")", 'raw' => $response];
         }
 
         return $decoded;
@@ -60,7 +61,8 @@ class AmbitionInfraSync {
         $res = self::callWhmApi($hostname, $username, $apiToken, 'version');
         if (isset($res['version'])) {
             $acctRes = self::callWhmApi($hostname, $username, $apiToken, 'listaccts');
-            $acctCount = isset($acctRes['data']['acct']) ? count($acctRes['data']['acct']) : 0;
+            $accts = $acctRes['data']['acct'] ?? ($acctRes['acct'] ?? []);
+            $acctCount = is_array($accts) ? count($accts) : 0;
             return [
                 'status' => 'ok',
                 'version' => $res['version'],
@@ -68,7 +70,7 @@ class AmbitionInfraSync {
                 'message' => "✅ WHM Connected! Version: {$res['version']}, Found {$acctCount} cPanel accounts."
             ];
         }
-        $err = $res['error'] ?? ($res['metadata']['reason'] ?? 'Failed to authenticate with WHM API Token');
+        $err = $res['error'] ?? ($res['metadata']['reason'] ?? ($res['cpanelresult']['error'] ?? 'Failed to authenticate with WHM API Token'));
         return ['status' => 'error', 'message' => "WHM Error: {$err}"];
     }
 
@@ -97,11 +99,15 @@ class AmbitionInfraSync {
 
         // 1. Fetch Accounts List (listaccts) with strict Error Guard
         $acctRes = self::callWhmApi($host, $user, $token, 'listaccts');
-        if (!isset($acctRes['metadata']['result']) || (int)$acctRes['metadata']['result'] !== 1) {
-            $reason = $acctRes['metadata']['reason'] ?? ($acctRes['error'] ?? 'WHM API listaccts failed');
+        $accounts = [];
+        if (isset($acctRes['data']['acct']) && is_array($acctRes['data']['acct'])) {
+            $accounts = $acctRes['data']['acct'];
+        } elseif (isset($acctRes['acct']) && is_array($acctRes['acct'])) {
+            $accounts = $acctRes['acct'];
+        } elseif (!isset($acctRes['metadata']['result']) || (int)$acctRes['metadata']['result'] !== 1) {
+            $reason = $acctRes['metadata']['reason'] ?? ($acctRes['error'] ?? ($acctRes['cpanelresult']['error'] ?? 'WHM API listaccts failed'));
             return ['status' => 'error', 'error' => "WHM API Failed: {$reason}"];
         }
-        $accounts = $acctRes['data']['acct'] ?? [];
 
         // 2. Fetch System Load Average (systemloadavg)
         $loadRes = self::callWhmApi($host, $user, $token, 'systemloadavg');
