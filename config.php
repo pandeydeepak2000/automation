@@ -128,6 +128,9 @@ function db(): PDO {
         try { $pdo->exec("ALTER TABLE `users` ADD COLUMN `allowed_modules` varchar(255) DEFAULT '1'"); } catch (Throwable $e) {}
         try { $pdo->exec("ALTER TABLE `users` ADD COLUMN `can_graphs` tinyint(1) DEFAULT 0"); } catch (Throwable $e) {}
         try { $pdo->exec("ALTER TABLE `users` MODIFY COLUMN `role` enum('Admin','Owner','Sales','Domain','Billing','Billing_Domain','Support_Tech','B.D.E.') NOT NULL"); } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE `whmcs_items_cache` ADD COLUMN `client_email` varchar(150) DEFAULT ''"); } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE `whmcs_items_cache` ADD COLUMN `client_name` varchar(150) DEFAULT ''"); } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE `whmcs_items_cache` ADD INDEX `email_idx` (`client_email`)"); } catch (Throwable $e) {}
     }
     return $pdo;
 }

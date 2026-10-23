@@ -343,7 +343,7 @@ class AmbitionInfraSync {
             }
         }
 
-        // 2. Fetch Domains
+        // 2. Fetch Domains from WHMCS
         $dRes = self::callWhmcs('GetClientsDomains', ['limitnum' => $limit]);
         if (!empty($dRes['domains']['domain'])) {
             $insD = $pdo->prepare("
@@ -374,7 +374,141 @@ class AmbitionInfraSync {
             }
         }
 
+        // 3. Populate Hosting from WHM Accounts (327 Active Server Accounts from SGP)
+        $whmAccounts = $pdo->query("SELECT * FROM whm_accounts")->fetchAll();
+        if (!empty($whmAccounts)) {
+            $insWhm = $pdo->prepare("
+                INSERT INTO whmcs_items_cache (
+                    item_type, whmcs_item_id, client_id, domain, package_name,
+                    client_email, client_name, billing_cycle, recurring_amount, status, updated_at
+                ) VALUES ('hosting', ?, ?, ?, ?, ?, ?, 'Monthly', 0.00, ?, NOW())
+                ON DUPLICATE KEY UPDATE
+                    domain = VALUES(domain),
+                    package_name = VALUES(package_name),
+                    client_email = VALUES(client_email),
+                    client_name = VALUES(client_name),
+                    status = VALUES(status),
+                    updated_at = NOW()
+            ");
+
+            foreach ($whmAccounts as $wa) {
+                $status = !empty($wa['is_suspended']) ? 'Suspended' : 'Active';
+                $insWhm->execute([
+                    1000000 + (int)$wa['id'],
+                    (int)($wa['server_id'] ?: 1),
+                    (string)$wa['domain'],
+                    (string)($wa['plan_name'] ?: 'Hosting cPanel'),
+                    (string)($wa['owner_email'] ?: ''),
+                    (string)$wa['cpanel_user'],
+                    $status
+                ]);
+                $synced++;
+            }
+        }
+
         return ['status' => 'ok', 'synced_count' => $synced];
+    }
+
+    /**
+     * Search Across WHMCS & Local Cache by Domain, Email ID, Plan or Client ID
+     */
+    public static function liveSearchWhmcs(string $query): array {
+        $pdo = db();
+        $q = trim($query);
+        if ($q === '') return [];
+
+        // 1. Search local cache
+        $stmt = $pdo->prepare("
+            SELECT * FROM whmcs_items_cache 
+            WHERE domain LIKE ? 
+               OR client_email LIKE ? 
+               OR client_name LIKE ? 
+               OR package_name LIKE ? 
+               OR client_id = ? 
+            ORDER BY id DESC LIMIT 50
+        ");
+        $stmt->execute(["%$q%", "%$q%", "%$q%", "%$q%", (int)$q]);
+        $rows = $stmt->fetchAll();
+
+        // 2. If query looks like email or domain, perform on-demand WHMCS API lookup
+        if (empty($rows) || strpos($q, '@') !== false) {
+            $cRes = self::callWhmcs('GetClients', ['search' => $q, 'limitnum' => 5]);
+            if (!empty($cRes['clients']['client'])) {
+                foreach ($cRes['clients']['client'] as $cl) {
+                    $cid = (int)$cl['id'];
+                    $cEmail = (string)($cl['email'] ?? '');
+                    $cName = trim(($cl['firstname'] ?? '') . ' ' . ($cl['lastname'] ?? ''));
+
+                    // Fetch this client's products
+                    $pRes = self::callWhmcs('GetClientsProducts', ['clientid' => $cid]);
+                    if (!empty($pRes['products']['product'])) {
+                        $ins = $pdo->prepare("
+                            INSERT INTO whmcs_items_cache (
+                                item_type, whmcs_item_id, client_id, client_email, client_name,
+                                domain, package_name, billing_cycle, recurring_amount, status, next_due_date, updated_at
+                            ) VALUES ('hosting', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                            ON DUPLICATE KEY UPDATE
+                                client_email = VALUES(client_email),
+                                client_name = VALUES(client_name),
+                                domain = VALUES(domain),
+                                status = VALUES(status),
+                                next_due_date = VALUES(next_due_date),
+                                updated_at = NOW()
+                        ");
+                        foreach ($pRes['products']['product'] as $p) {
+                            $ins->execute([
+                                (int)($p['id'] ?? 0),
+                                $cid,
+                                $cEmail,
+                                $cName,
+                                (string)($p['domain'] ?? ''),
+                                (string)($p['name'] ?? 'Hosting Package'),
+                                (string)($p['billingcycle'] ?? 'Monthly'),
+                                (float)($p['recurringamount'] ?? 0),
+                                (string)($p['status'] ?? 'Active'),
+                                !empty($p['nextduedate']) ? $p['nextduedate'] : null
+                            ]);
+                        }
+                    }
+
+                    // Fetch this client's domains
+                    $dRes = self::callWhmcs('GetClientsDomains', ['clientid' => $cid]);
+                    if (!empty($dRes['domains']['domain'])) {
+                        $insD = $pdo->prepare("
+                            INSERT INTO whmcs_items_cache (
+                                item_type, whmcs_item_id, client_id, client_email, client_name,
+                                domain, package_name, billing_cycle, recurring_amount, status, next_due_date, updated_at
+                            ) VALUES ('domain', ?, ?, ?, ?, ?, 'Domain Registration', 'Annually', ?, ?, ?, NOW())
+                            ON DUPLICATE KEY UPDATE
+                                client_email = VALUES(client_email),
+                                client_name = VALUES(client_name),
+                                domain = VALUES(domain),
+                                status = VALUES(status),
+                                next_due_date = VALUES(next_due_date),
+                                updated_at = NOW()
+                        ");
+                        foreach ($dRes['domains']['domain'] as $d) {
+                            $insD->execute([
+                                (int)($d['id'] ?? 0),
+                                $cid,
+                                $cEmail,
+                                $cName,
+                                (string)($d['domainname'] ?? ''),
+                                (float)($d['recurringamount'] ?? 0),
+                                (string)($d['status'] ?? 'Active'),
+                                !empty($d['nextduedate']) ? $d['nextduedate'] : null
+                            ]);
+                        }
+                    }
+                }
+
+                // Re-query local cache with fresh synced items
+                $stmt->execute(["%$q%", "%$q%", "%$q%", "%$q%", (int)$q]);
+                $rows = $stmt->fetchAll();
+            }
+        }
+
+        return $rows;
     }
 }
 
