@@ -6,27 +6,88 @@ SET time_zone = "+05:30";
 CREATE TABLE IF NOT EXISTS `users` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(50) NOT NULL,
+  `display_title` varchar(100) NOT NULL DEFAULT '',
   `email` varchar(100) NOT NULL,
   `password_hash` varchar(255) NOT NULL,
-  `role` enum('Owner','Sales','Domain','Billing_Domain','Support_Tech') NOT NULL,
+  `role` enum('Admin','Owner','Sales','Domain','Billing','Billing_Domain','Support_Tech','B.D.E.') NOT NULL,
   `department` varchar(50) NOT NULL,
+  `allowed_modules` varchar(255) DEFAULT '1',
+  `can_graphs` tinyint(1) DEFAULT 0,
   `monthly_salary` decimal(10,2) DEFAULT 0.00,
   `can_refund` tinyint(1) DEFAULT 0,
   `can_discount` tinyint(1) DEFAULT 0,
   `max_discount_pct` decimal(5,2) DEFAULT 0.00,
   `telegram_chat_id` varchar(50) DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `name` (`name`)
+  UNIQUE KEY `name` (`name`),
+  KEY `email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Seed Your Exact Team & Payroll Rules (Default Password for all: Ambition@2026 - Change after login)
-INSERT INTO `users` (`name`, `email`, `password_hash`, `role`, `department`, `monthly_salary`, `can_refund`, `can_discount`, `max_discount_pct`) VALUES
-('Aarav', 'aarav@ambitionhost.in', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Owner', 'All', 0.00, 1, 1, 100.00),
-('Chandrika', 'chandrika@ambitionhost.in', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Sales', 'Sales', 15000.00, 0, 1, 19.00),
-('Priya', 'priya@ambitionhost.in', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Domain', 'Domains', 12000.00, 0, 0, 0.00),
-('Sanju', 'sanju@ambitionhost.in', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Billing_Domain', 'Billing & Domains', 12000.00, 0, 1, 10.00),
-('Deepak', 'deepak@ambitionhost.in', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Support_Tech', 'Support & Servers', 25000.00, 0, 0, 0.00)
-ON DUPLICATE KEY UPDATE `monthly_salary`=VALUES(`monthly_salary`);
+INSERT INTO `users` (`name`, `display_title`, `email`, `password_hash`, `role`, `department`, `allowed_modules`, `can_graphs`, `monthly_salary`, `can_refund`, `can_discount`, `max_discount_pct`) VALUES
+('Aarav', 'Aarav (Admin)', 'aarav@ambitionhost.in', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Admin', 'All', '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25', 1, 0.00, 1, 1, 100.00),
+('Deepak', 'Deepak (B.D.E.)', 'deepak@ambitionhost.in', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'B.D.E.', 'Support & Servers', '1,2,7,8,10,11,18,19,23,24', 1, 25000.00, 0, 0, 0.00),
+('Chandrika', 'Chandrika (Sales)', 'chandrika@ambitionhost.in', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Sales', 'Sales', '1,2,3,5,6,7,8,13,14,20,23', 0, 15000.00, 0, 1, 19.00),
+('Priya', 'Priya (Domain)', 'priya@ambitionhost.in', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Domain', 'Domains', '1,3,5,7,12,23', 0, 12000.00, 0, 0, 0.00),
+('Sanju', 'Sanju (Billing)', 'sanju@ambitionhost.in', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Billing', 'Billing & Domains', '1,3,4,5,12,13,23', 0, 12000.00, 0, 1, 10.00)
+ON DUPLICATE KEY UPDATE `display_title`=VALUES(`display_title`), `role`=VALUES(`role`), `allowed_modules`=VALUES(`allowed_modules`), `can_graphs`=VALUES(`can_graphs`), `monthly_salary`=VALUES(`monthly_salary`);
+
+-- 1B. Global Activity Audit Logs (For 360° Brainstorm AI & Audit)
+CREATE TABLE IF NOT EXISTS `activity_logs` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `actor` varchar(100) NOT NULL,
+  `module_id` int(11) NOT NULL DEFAULT 0,
+  `event_summary` text NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `module_actor` (`module_id`, `actor`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 1C. Website Chat Widget & Local Support Tickets
+CREATE TABLE IF NOT EXISTS `chat_customers` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `email` varchar(120) NOT NULL,
+  `pin_hash` varchar(255) NOT NULL,
+  `reset_otp_hash` varchar(255) DEFAULT NULL,
+  `otp_expires_at` datetime DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `customer_live_messages` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `customer_email` varchar(120) NOT NULL,
+  `sender` enum('Customer','AI','Staff') NOT NULL,
+  `message` text NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `customer_email` (`customer_email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `support_tickets_local` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `ticket_code` varchar(50) NOT NULL,
+  `customer_email` varchar(120) NOT NULL,
+  `subject` varchar(255) NOT NULL,
+  `status` enum('Open','Answered','Customer-Reply','Closed') DEFAULT 'Open',
+  `assigned_to` varchar(50) DEFAULT 'Support',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ticket_code` (`ticket_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `ticket_messages_local` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `ticket_id` int(11) NOT NULL,
+  `sender_type` enum('Customer','Staff') NOT NULL,
+  `sender_name` varchar(100) NOT NULL,
+  `message` text NOT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `ticket_id` (`ticket_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 2. Tasks & Accountability Queue (With Read-Only for Others & Transfer History)
 CREATE TABLE IF NOT EXISTS `tasks` (

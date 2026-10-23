@@ -1,5 +1,5 @@
 <?php
-// api.php - Unified AJAX & Form Backend Controller for AmbitionHost Master OS
+// api.php - Final Production Backend Controller (With Autonomous Brainstorm Offer Engine & Role Controls)
 declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/auth.php';
@@ -7,23 +7,25 @@ require_once __DIR__ . '/whm_whmcs_sync.php';
 require_once __DIR__ . '/ai_brain.php';
 
 $pdo = db();
+$staff = current_staff_user();
+$currentUser = $staff['name'] ?? 'Aarav';
+$currentTitle = $staff['display_title'] ?? 'Aarav (Admin)';
+$isAdmin = (($staff['role'] ?? '') === 'Admin' || $currentUser === 'Aarav');
 $action = $_REQUEST['action'] ?? '';
-$currentUser = $_SESSION['user_name'] ?? 'Aarav';
 
-// Helper: Verify if current user can edit/resolve a specific task
 function user_can_edit_task(array $task, string $user): bool {
     if ($task['owner'] === $user) return true;
     $grants = array_filter(array_map('trim', explode(',', (string)($task['granted_users'] ?? ''))));
     return in_array($user, $grants, true);
 }
 
-// 1. Export CA GST / Payment Reconciliation CSV (1-Click Download)
-if ($action === 'export_ca_csv') {
+// 1-Click CA GST CSV Export
+if ($action === 'export_ca_csv' && is_module_allowed(4, $staff)) {
     header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="AmbitionHost_CA_Payments_' . date('Y_m_d') . '.csv"');
+    header('Content-Disposition: attachment; filename="AmbitionHost_CA_GST_' . date('Y_m_d') . '.csv"');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Record ID', 'WHMCS Invoice #', 'Customer Name', 'Email', 'Amount (INR)', 'Source', 'Payment ID / UTR', 'Sanju Verified', 'Invoice Status', 'Service Delivered', 'Date']);
-    $rows = $pdo->query("SELECT id, whmcs_invoice_id, customer_name, customer_email, amount, payment_source, payment_id_or_utr, sanju_verified, whmcs_invoice_status, service_delivered, created_at FROM payment_records ORDER BY id DESC")->fetchAll(PDO::FETCH_NUM);
+    fputcsv($out, ['Record ID', 'WHMCS Invoice #', 'Customer Name', 'Amount (INR)', 'Source', 'UTR / Ref', 'Sanju Verified', 'Invoice Status', 'Service Delivered', 'Date']);
+    $rows = $pdo->query("SELECT id, whmcs_invoice_id, customer_name, amount, payment_source, payment_id_or_utr, sanju_verified, whmcs_invoice_status, service_delivered, created_at FROM payment_records ORDER BY id DESC")->fetchAll(PDO::FETCH_NUM);
     foreach ($rows as $r) fputcsv($out, $r);
     fclose($out);
     exit;
@@ -34,14 +36,323 @@ header('Content-Type: application/json; charset=utf-8');
 try {
     switch ($action) {
 
-        // Change Email or Password (Owner can change anyone; Staff can change own)
+        // 1. AUTONOMOUS GLOBAL BRAINSTORM & OFFER/URGENT EXECUTION ENGINE (Admin Only)
+        case 'ask_global_brainstorm':
+            if (!$isAdmin) throw new Exception('Access Denied: सिर्फ Aarav (Admin) के लिए है।');
+            $prompt = trim($_POST['prompt'] ?? '');
+            if ($prompt === '') throw new Exception('अपना मैसेज लिखें');
+
+            // Rule A: Greeting Check -> Immediately ask what new Offer/Plan Aarav is launching today!
+            if (preg_match('/^(hello|hi|hey|good morning|good afternoon|good evening|gm|namaste|नमस्ते|हेलो|हाय)\b/i', $prompt) && mb_strlen($prompt) < 35) {
+                $greetingReply = "### Good Day, Aarav (Admin)!\n"
+                    . "आज तुम **AmbitionHost** में क्या नया करने वाले हो? या तुम्हारा कोई नया **Offer** या **Planning** है तो बताओ!\n\n"
+                    . "*(जैसे ही तुम कोई भी नया Offer या Urgent Action यहाँ लिखोगे, मैं उसकी पूरी Banner, Website, WhatsApp Status और Instagram की प्लानिंग बनाकर बिना तुमसे दोबारा पूछे सीधे **Chandrika (Sales)** और **Deepak (B.D.E.)** के डैशबोर्ड में ऑटोमैटिक भेज दूँगा, और अगर वो 10 मिनट में Read नहीं करेंगे तो उन्हें हर 10 मिनट पर लगातार अलार्म जाएगा!)*";
+
+                $pdo->prepare("INSERT INTO ai_module_chats (module_id, user_name, llm_provider, user_prompt, ai_response) VALUES (0, 'Aarav (Admin)', 'BRAIN', ?, ?)")
+                    ->execute([$prompt, $greetingReply]);
+                echo json_encode(['status' => 'ok', 'auto_dispatched' => false, 'response' => $greetingReply]);
+                break;
+            }
+
+            // Rule B: Detect Offer Launch or Urgent Action Keywords (or forced checkbox)
+            $isOfferOrUrgent = !empty($_POST['force_offer_launch']) || (bool)preg_match('/(offer|launch|plan|planning|promo|discount|urgent|action|299|599|571|ऑफर|लॉन्च|प्लानिंग|अर्जेंट)/iu', $prompt);
+
+            if ($isOfferOrUrgent) {
+                $execPrompt = $prompt . "\n\n"
+                    . "[SYSTEM EXECUTION INSTRUCTION]: Aarav (Admin) has commanded an Offer Launch / Urgent Action. Generate a complete, ready-to-execute blueprint divided into 3 clear sections:\n"
+                    . "1. Website, Banner & Instagram Execution for Deepak (B.D.E.) (Exact Banner Headline, Website Flash Bar Text, Promo Code/Price check, Instagram Post/Story creative brief).\n"
+                    . "2. WhatsApp Status, Broadcast & Sales Closing Script for Chandrika (Sales) (Ready-to-copy WhatsApp Status text, Broadcast message in Hinglish/English, KYC/Terms check).\n"
+                    . "3. Small-Budget Paid Ads Proposal for Aarav (Admin) (Ask Aarav if we should run a ₹200-₹330/day Meta Click-to-WhatsApp Ad for this offer, and show the exact targeting & expected leads).";
+
+                $aiRes = AmbitionAIBrain::askGlobalBrainstorm($execPrompt, $staff);
+                $fullPlan = $aiRes['response'];
+
+                // Autonomous Dispatch 1 -> Deepak (B.D.E.) without asking Aarav!
+                $insTask = $pdo->prepare("INSERT INTO tasks (module_id, title, description, owner, task_kind, due_at) VALUES (?, ?, ?, ?, 'urgent', NOW())");
+                $deepakTitle = "🚀 URGENT OFFER/ACTION LAUNCH (By Admin): Website, Banner & Insta Setup";
+                $insTask->execute([14, $deepakTitle, "Aarav (Admin) ने Brainstorm से यह नया Offer/Urgent Action लॉन्च किया है। अपना हिस्सा तुरंत लाइव करें:\n\n" . $fullPlan, 'Deepak']);
+                $deepakTaskId = (int)$pdo->lastInsertId();
+
+                $pdo->prepare("INSERT IGNORE INTO notifications (recipient, task_id, dedup_key, message) VALUES ('Deepak', ?, ?, ?)")
+                    ->execute([$deepakTaskId, "offer-launch-deepak-{$deepakTaskId}-0", "🚨 [URGENT OFFER LAUNCH BY ADMIN]: {$deepakTitle} (10 मिनट में Read करें वरना हर 10 मिनट पर अलार्म बजेगा!)"]);
+
+                // Autonomous Dispatch 2 -> Chandrika (Sales) without asking Aarav!
+                $chandrikaTitle = "🚀 URGENT OFFER/ACTION LAUNCH (By Admin): WhatsApp Status, Broadcast & Sales Pitch";
+                $insTask->execute([13, $chandrikaTitle, "Aarav (Admin) ने Brainstorm से यह नया Offer/Urgent Action लॉन्च किया है। तुरंत WhatsApp Status और Sales पर लागू करें:\n\n" . $fullPlan, 'Chandrika']);
+                $chandrikaTaskId = (int)$pdo->lastInsertId();
+
+                $pdo->prepare("INSERT IGNORE INTO notifications (recipient, task_id, dedup_key, message) VALUES ('Chandrika', ?, ?, ?)")
+                    ->execute([$chandrikaTaskId, "offer-launch-chandrika-{$chandrikaTaskId}-0", "🚨 [URGENT OFFER LAUNCH BY ADMIN]: {$chandrikaTitle} (10 मिनट में Read करें वरना हर 10 मिनट पर अलार्म बजेगा!)"]);
+
+                log_system_activity('Aarav (Admin) via Brainstorm AI', 0, "Auto-launched Offer/Urgent Action to Deepak (Task #{$deepakTaskId}) & Chandrika (Task #{$chandrikaTaskId}) with 10-min snooze enforcement.");
+
+                echo json_encode(['status' => 'ok', 'auto_dispatched' => true, 'response' => $fullPlan]);
+                break;
+            }
+
+            // Standard 360° Brainstorm Consultation
+            $aiRes = AmbitionAIBrain::askGlobalBrainstorm($prompt, $staff);
+            echo json_encode(['status' => 'ok', 'auto_dispatched' => false, 'response' => $aiRes['response']]);
+            break;
+
+        // 2. Per-Module Scoped AI Chat (Inside Modules 1 to 25)
+        case 'ask_ai':
+            $modId = (int)($_POST['module_id'] ?? 1);
+            if (!is_module_allowed($modId, $staff)) throw new Exception('Access Denied for this module');
+            $modTitle = trim($_POST['module_title'] ?? 'Module');
+            $prompt = trim($_POST['prompt'] ?? '');
+            if ($prompt === '') throw new Exception('सवाल लिखें');
+            $res = AmbitionAIBrain::askModuleAdvisor($modId, $modTitle, $prompt, $staff);
+            echo json_encode(['status' => 'ok', 'data' => $res]);
+            break;
+
+        // 3. Module 09: Toggle Which Modules Are Visible to Each Staff Member (Admin Only)
+        case 'toggle_module_visibility':
+            if (!$isAdmin) throw new Exception('Only Aarav (Admin) can change module visibility');
+            $targetUser = trim($_POST['staff_name'] ?? '');
+            $modId      = (int)($_POST['module_id'] ?? 0);
+            if ($modId === 1) throw new Exception('Module 01 सबके लिए अनिवार्य है।');
+
+            $stmt = $pdo->prepare("SELECT allowed_modules, display_title FROM users WHERE name = ?");
+            $stmt->execute([$targetUser]);
+            $uRow = $stmt->fetch();
+            if (!$uRow) throw new Exception('Staff not found');
+
+            $mods = array_map('intval', array_filter(explode(',', (string)$uRow['allowed_modules'])));
+            if (in_array($modId, $mods, true)) {
+                $mods = array_values(array_diff($mods, [$modId]));
+            } else {
+                $mods[] = $modId;
+                sort($mods);
+            }
+            $pdo->prepare("UPDATE users SET allowed_modules = ? WHERE name = ?")->execute([implode(',', $mods), $targetUser]);
+            log_system_activity($currentTitle, 9, "Updated Module #{$modId} visibility for {$uRow['display_title']}");
+            echo json_encode(['status' => 'ok', 'allowed_modules' => implode(',', $mods)]);
+            break;
+
+        // 4. Create / Resolve / Transfer Task
+        case 'create_task':
+            $modId = (int)($_POST['module_id'] ?? 1);
+            $title = trim($_POST['title'] ?? '');
+            $desc  = trim($_POST['description'] ?? '');
+            $owner = trim($_POST['owner'] ?? $currentUser);
+            $kind  = $_POST['task_kind'] ?? 'urgent';
+            $link  = trim($_POST['whmcs_link'] ?? '');
+            if ($title === '') throw new Exception('Task title required');
+
+            $stmt = $pdo->prepare("INSERT INTO tasks (module_id, title, description, owner, task_kind, whmcs_link, due_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+            $stmt->execute([$modId, $title, $desc, $owner, $kind, $link]);
+            $tid = (int)$pdo->lastInsertId();
+            $pdo->prepare("INSERT IGNORE INTO notifications (recipient, task_id, dedup_key, message) VALUES (?, ?, ?, ?)")
+                ->execute([$owner, $tid, "new-task-{$tid}-" . time(), "🆕 New Task Assigned (#{$tid}): {$title}"]);
+            log_system_activity($currentTitle, $modId, "Assigned Task #{$tid} ({$title}) to {$owner}");
+            echo json_encode(['status' => 'ok', 'task_id' => $tid]);
+            break;
+
+        case 'update_task':
+            $tid = (int)($_POST['task_id'] ?? 0);
+            $sub = $_POST['sub_action'] ?? '';
+            $stmt = $pdo->prepare("SELECT * FROM tasks WHERE id = ?");
+            $stmt->execute([$tid]);
+            $task = $stmt->fetch();
+            if (!$task) throw new Exception('Task not found');
+
+            if ($sub === 'grant_access') {
+                if (!$isAdmin) throw new Exception('सिर्फ Aarav (Admin) ही extra permission दे सकते हैं।');
+                $grantTo = trim($_POST['grant_to'] ?? 'Aarav');
+                $grants = array_filter(array_map('trim', explode(',', (string)$task['granted_users'])));
+                if (!in_array($grantTo, $grants, true)) $grants[] = $grantTo;
+                $pdo->prepare("UPDATE tasks SET granted_users = ? WHERE id = ?")->execute([implode(',', $grants), $tid]);
+                echo json_encode(['status' => 'ok']);
+                break;
+            }
+
+            if (!user_can_edit_task($task, $currentUser)) {
+                throw new Exception('Read-Only Rule: दूसरे के काम में कोई बदलाव नहीं किया जा सकता।');
+            }
+
+            if ($sub === 'resolve') {
+                $ev = trim($_POST['evidence'] ?? '');
+                if ($ev === '') throw new Exception('Resolution Evidence लिखना अनिवार्य है।');
+                $pdo->prepare("UPDATE tasks SET status='Resolved', resolution_evidence=?, resolved_at=NOW() WHERE id=?")->execute([$ev, $tid]);
+                log_system_activity($currentTitle, (int)$task['module_id'], "Resolved Task #{$tid} with proof: {$ev}");
+            } elseif ($sub === 'transfer') {
+                $newOwner = trim($_POST['new_owner'] ?? '');
+                if ($newOwner === '' || $newOwner === $task['owner']) throw new Exception('Valid new owner चुनें');
+                $prevs = array_filter(array_map('trim', explode(',', (string)$task['previous_owners'])));
+                if (!in_array($task['owner'], $prevs, true)) $prevs[] = $task['owner'];
+                $pdo->prepare("UPDATE tasks SET owner=?, previous_owners=? WHERE id=?")->execute([$newOwner, implode(',', $prevs), $tid]);
+                $pdo->prepare("INSERT IGNORE INTO notifications (recipient, task_id, dedup_key, message) VALUES (?, ?, ?, ?)")
+                    ->execute([$newOwner, $tid, "xfer-{$tid}-" . time(), "⇄ Task #{$tid} transferred to you: {$task['title']}"]);
+                log_system_activity($currentTitle, (int)$task['module_id'], "Transferred Task #{$tid} to {$newOwner}");
+            }
+            echo json_encode(['status' => 'ok']);
+            break;
+
+        // 5. Mark Notification as Read (Stops 10-Min Repeating Offer Alarm, Does NOT Resolve Task)
+        case 'read_notification':
+            $nid = (int)($_POST['notification_id'] ?? 0);
+            $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND recipient = ?")->execute([$nid, $currentUser]);
+            echo json_encode(['status' => 'ok']);
+            break;
+
+        // 6. Module 07: Staff Reply to Website Ticket -> Triggers Strict ZERO-LINK Email!
+        case 'reply_local_ticket':
+            $ticketId = (int)($_POST['ticket_id'] ?? 0);
+            $replyMsg = trim($_POST['reply_message'] ?? '');
+            if ($replyMsg === '') throw new Exception('Reply message required');
+
+            $tStmt = $pdo->prepare("SELECT * FROM support_tickets_local WHERE id = ?");
+            $tStmt->execute([$ticketId]);
+            $tk = $tStmt->fetch();
+            if (!$tk) throw new Exception('Ticket not found');
+
+            $pdo->prepare("INSERT INTO ticket_messages_local (ticket_id, sender_type, sender_name, message) VALUES (?, 'Staff', ?, ?)")
+                ->execute([$ticketId, $currentTitle, $replyMsg]);
+            $pdo->prepare("UPDATE support_tickets_local SET status = 'Answered' WHERE id = ?")->execute([$ticketId]);
+
+            // STRICT ZERO-LINK PLAIN-TEXT EMAIL NOTIFICATION TO CUSTOMER
+            send_zero_link_email(
+                (string)$tk['customer_email'],
+                "Ticket {$tk['ticket_code']} Update - AmbitionHost",
+                "There is a response made on your ticket. Please check."
+            );
+
+            log_system_activity($currentTitle, 7, "Replied to Ticket {$tk['ticket_code']} (Zero-link email notification sent to customer).");
+            echo json_encode(['status' => 'ok']);
+            break;
+
+        // 7. Payment Upload (Protected MIME Validation) & Sanju Verification
+        case 'payment_action':
+            $pSub = $_POST['pay_sub'] ?? '';
+            if ($pSub === 'add_payment') {
+                $invId = (int)($_POST['whmcs_invoice_id'] ?? 0);
+                $cname = trim($_POST['customer_name'] ?? '');
+                $amt   = (float)($_POST['amount'] ?? 0);
+                $src   = $_POST['payment_source'] ?? 'WhatsApp_UPI';
+                $utr   = trim($_POST['payment_id_or_utr'] ?? '');
+                $owner = $_POST['delivery_owner'] ?? 'Chandrika';
+                $proofUrl = '';
+
+                if (!empty($_FILES['proof_image']['tmp_name'])) {
+                    if ($_FILES['proof_image']['size'] > 5 * 1024 * 1024) throw new Exception('Image must be under 5MB');
+                    $imgInfo = @getimagesize($_FILES['proof_image']['tmp_name']);
+                    $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+                    if (!$imgInfo || !isset($allowedMimes[$imgInfo['mime']])) {
+                        throw new Exception('Only valid JPG, PNG, or WEBP screenshots allowed');
+                    }
+                    $uploadDir = __DIR__ . '/uploads/';
+                    if (!is_dir($uploadDir)) {
+                        mkdir($uploadDir, 0755, true);
+                        file_put_contents($uploadDir . '.htaccess', "php_flag engine off\nOptions -ExecCGI -Indexes\n<FilesMatch \"\\.(php|phtml|php5|php7|php8|pl|py|sh|cgi)$\">\nRequire all denied\n</FilesMatch>\n");
+                    }
+                    $fname = 'proof_inv_' . $invId . '_' . time() . '.' . $allowedMimes[$imgInfo['mime']];
+                    if (move_uploaded_file($_FILES['proof_image']['tmp_name'], $uploadDir . $fname)) {
+                        $proofUrl = 'uploads/' . $fname;
+                    }
+                }
+                $pdo->prepare("INSERT INTO payment_records (whmcs_invoice_id, customer_name, amount, payment_source, payment_id_or_utr, proof_file_url, delivery_owner) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$invId, $cname, $amt, $src, $utr, $proofUrl, $owner]);
+                log_system_activity($currentTitle, 4, "Uploaded ₹{$amt} payment proof for Invoice #{$invId}");
+            } elseif ($pSub === 'sanju_verify') {
+                $pid = (int)$_POST['payment_row_id'];
+                $pdo->prepare("UPDATE payment_records SET sanju_verified=1, whmcs_invoice_status='Paid' WHERE id=?")->execute([$pid]);
+                log_system_activity($currentTitle, 4, "Verified bank receipt for Payment Record #{$pid}");
+            } elseif ($pSub === 'mark_delivered') {
+                $pid = (int)$_POST['payment_row_id'];
+                $pdo->prepare("UPDATE payment_records SET service_delivered=1 WHERE id=?")->execute([$pid]);
+                log_system_activity($currentTitle, 3, "Marked service delivered for Payment Record #{$pid}");
+            }
+            echo json_encode(['status' => 'ok']);
+            break;
+
+        // 8. Sales CRM Actions (30m SLA & 10m/30m/2h Timers)
+        case 'crm_action':
+            $crmSub = $_POST['crm_sub'] ?? '';
+            if ($crmSub === 'new_lead') {
+                $thread = trim($_POST['thread_id'] ?? ('wa-' . time()));
+                $ident  = trim($_POST['customer_identity'] ?? 'WhatsApp Lead');
+                $msg    = trim($_POST['message'] ?? 'Enquiry');
+                $pdo->prepare("INSERT INTO sales_leads (thread_id, customer_identity, first_msg_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE customer_identity=VALUES(customer_identity)")
+                    ->execute([$thread, $ident]);
+                $lid = (int)$pdo->lastInsertId();
+                if ($lid > 0) {
+                    $pdo->prepare("INSERT INTO tasks (module_id, title, description, owner, task_kind, lead_id, due_at) VALUES (13, ?, ?, 'Chandrika', 'followup', ?, NOW())")
+                        ->execute(["New Sales Enquiry · {$ident}", "Message: {$msg} (Reply within 30 working mins)", $lid]);
+                }
+            } elseif ($crmSub === 'human_reply') {
+                $pdo->prepare("UPDATE sales_leads SET first_human_reply_at = IFNULL(first_human_reply_at, NOW()) WHERE id = ?")->execute([(int)$_POST['lead_id']]);
+            } elseif ($crmSub === 'price_sent') {
+                $pdo->prepare("UPDATE sales_leads SET first_human_reply_at = IFNULL(first_human_reply_at, NOW()), price_sent_at = NOW(), customer_replied_after_price = 0 WHERE id = ?")->execute([(int)$_POST['lead_id']]);
+            } elseif ($crmSub === 'customer_replied') {
+                $lid = (int)$_POST['lead_id'];
+                $pdo->prepare("UPDATE sales_leads SET customer_replied_after_price = 1 WHERE id = ?")->execute([$lid]);
+                $pdo->prepare("UPDATE tasks SET status='Cancelled', resolution_evidence='Customer replied; follow-ups stopped' WHERE lead_id=? AND task_kind='followup' AND status='Pending'")->execute([$lid]);
+            }
+            echo json_encode(['status' => 'ok']);
+            break;
+
+        // 9. Master Domain Vault WhatsApp .txt Importer
+        case 'import_domain_vault':
+            $rawText = trim($_POST['vault_text'] ?? '');
+            $lines = preg_split('/\r\n|\r|\n/', $rawText);
+            $registrars = ['NameSilo','Cosmotown','Spaceship','Namecheap','Dynadot','Atak','Nominalia','Register.it','Porkbun','one.com','BigRock','Domain.com','Epik','Name.com','Sav','GoDaddy','DreamHost','WHC','Unstoppable','Network Solutions','Wix','Directnic','Hioxindia','Hostinger','Truehost','Gname'];
+            $imported = 0;
+            $ins = $pdo->prepare("INSERT INTO domain_vault (domain_name, registrar_name, account_email_or_id, notes) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE registrar_name=VALUES(registrar_name), account_email_or_id=VALUES(account_email_or_id), notes=VALUES(notes)");
+            foreach ($lines as $line) {
+                if (preg_match('/([a-z0-9][a-z0-9\-]{1,62}\.(?:com|in|net|org|xyz|io|co\.in|shop|site|fun|cfd|click|ca|it|info|online))/i', $line, $m)) {
+                    $dom = strtolower($m[1]);
+                    $em  = preg_match('/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/', $line, $emM) ? strtolower($emM[1]) : 'Check Note';
+                    $reg = 'Spaceship/Other';
+                    foreach ($registrars as $r) { if (stripos($line, $r) !== false) { $reg = $r; break; } }
+                    if ($dom !== $em) { $ins->execute([$dom, $reg, $em, mb_substr($line, 0, 240)]); $imported++; }
+                }
+            }
+            echo json_encode(['status' => 'ok', 'imported_count' => $imported]);
+            break;
+
+        // 10. WHM Server Add & Sync (14 Ticked Privileges)
+        case 'whm_action':
+            $wSub = $_POST['whm_sub'] ?? '';
+            if ($wSub === 'add_server') {
+                $pdo->prepare("INSERT INTO whm_servers (server_name, provider, hostname, whm_username, api_token, monthly_cost_inr, max_backup_gb) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([
+                        trim($_POST['server_name'] ?? 'WHM Server'),
+                        trim($_POST['provider'] ?? 'Custom'),
+                        trim($_POST['hostname'] ?? ''),
+                        trim($_POST['whm_username'] ?? 'root'),
+                        trim($_POST['api_token'] ?? ''),
+                        (float)($_POST['monthly_cost_inr'] ?? 0),
+                        (int)($_POST['max_backup_gb'] ?? 20)
+                    ]);
+                echo json_encode(['status' => 'ok']);
+            } elseif ($wSub === 'sync_server') {
+                $sid = (int)($_POST['server_id'] ?? 0);
+                $res = AmbitionInfraSync::syncSingleServer($sid);
+                echo json_encode(['status' => 'ok', 'data' => $res]);
+            }
+            break;
+
+        // 11. Module 25: Save System & Multi-LLM Settings directly to Database
+        case 'save_system_settings':
+            if (!$isAdmin) throw new Exception('Admin only');
+            foreach ($_POST as $k => $v) {
+                if (str_starts_with($k, 'api_key_') || in_array($k, ['active_llm_provider', 'telegram_bot_token', 'aarav_telegram_chat_id'], true)) {
+                    $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
+                        ->execute([$k, trim((string)$v)]);
+                }
+            }
+            echo json_encode(['status' => 'ok']);
+            break;
+
+        // 12. Change Email or Password (Owner/Admin can change anyone; Staff can change own)
         case 'change_credentials':
             $targetUserId = (int)($_POST['target_user_id'] ?? $_SESSION['user_id']);
             $newEmail = trim($_POST['new_email'] ?? '');
             $newPassword = $_POST['new_password'] ?? '';
 
-            if ($targetUserId !== (int)$_SESSION['user_id'] && ($_SESSION['user_role'] ?? '') !== 'Owner' && $currentUser !== 'Aarav') {
-                throw new Exception('Permission Denied: Only Aarav can change other team members.');
+            if ($targetUserId !== (int)$_SESSION['user_id'] && !$isAdmin) {
+                throw new Exception('Permission Denied: Only Aarav (Admin) can change other team members.');
             }
 
             if ($newEmail !== '') {
@@ -62,253 +373,11 @@ try {
                 $stmt->execute([$hash, $targetUserId]);
             }
 
-            echo json_encode(['status' => 'ok', 'message' => 'Credentials updated successfully!']);
-            break;
-
-        // Create New Task in Any Module
-        case 'create_task':
-            $modId = (int)($_POST['module_id'] ?? 1);
-            $title = trim($_POST['title'] ?? '');
-            $desc  = trim($_POST['description'] ?? '');
-            $owner = trim($_POST['owner'] ?? $currentUser);
-            $kind  = $_POST['task_kind'] ?? 'urgent';
-            $link  = trim($_POST['whmcs_link'] ?? '');
-            if ($title === '') throw new Exception('Task title required');
-
-            $stmt = $pdo->prepare("INSERT INTO tasks (module_id, title, description, owner, task_kind, whmcs_link, due_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
-            $stmt->execute([$modId, $title, $desc, $owner, $kind, $link]);
-            $tid = (int)$pdo->lastInsertId();
-
-            $pdo->prepare("INSERT INTO task_events (task_id, actor, event_type, message) VALUES (?, ?, 'system', ?)")
-                ->execute([$tid, $currentUser, "Task created and assigned to {$owner}"]);
-            $pdo->prepare("INSERT IGNORE INTO notifications (recipient, task_id, dedup_key, message) VALUES (?, ?, ?, ?)")
-                ->execute([$owner, $tid, "new-task-{$tid}-" . time(), "🆕 New Task Assigned: {$title}"]);
-
-            echo json_encode(['status' => 'ok', 'task_id' => $tid]);
-            break;
-
-        // Add Own Note / Resolve / Mark Not Resolved / Transfer / Aarav Grant Access
-        case 'update_task':
-            $tid = (int)($_POST['task_id'] ?? 0);
-            $sub = $_POST['sub_action'] ?? '';
-            $stmt = $pdo->prepare("SELECT * FROM tasks WHERE id = ?");
-            $stmt->execute([$tid]);
-            $task = $stmt->fetch();
-            if (!$task) throw new Exception('Task not found');
-
-            if ($sub === 'grant_access') {
-                if ($currentUser !== 'Aarav') throw new Exception('सिर्फ Aarav ही extra task permission दे सकते हैं।');
-                $grantTo = trim($_POST['grant_to'] ?? '');
-                $grants = array_filter(array_map('trim', explode(',', (string)$task['granted_users'])));
-                if ($grantTo !== '' && !in_array($grantTo, $grants, true)) {
-                    $grants[] = $grantTo;
-                    $pdo->prepare("UPDATE tasks SET granted_users = ? WHERE id = ?")->execute([implode(',', $grants), $tid]);
-                    $pdo->prepare("INSERT INTO task_events (task_id, actor, event_type, message) VALUES (?, 'Aarav', 'grant', ?)")
-                        ->execute([$tid, "Aarav granted extra edit permission to {$grantTo}"]);
-                }
-                echo json_encode(['status' => 'ok']);
-                break;
-            }
-
-            // Enforce Strict Read-Only Rule for Other Users' Tasks
-            if (!user_can_edit_task($task, $currentUser)) {
-                throw new Exception('Read-Only Rule: दूसरे के काम पर कोई comment, note या बदलाव नहीं किया जा सकता।');
-            }
-
-            if ($sub === 'add_note') {
-                $note = trim($_POST['note'] ?? '');
-                if ($note === '') throw new Exception('Note खाली नहीं हो सकता');
-                $pdo->prepare("INSERT INTO task_events (task_id, actor, event_type, message) VALUES (?, ?, 'note', ?)")
-                    ->execute([$tid, $currentUser, $note]);
-            } elseif ($sub === 'resolve') {
-                $evidence = trim($_POST['evidence'] ?? '');
-                if ($evidence === '') throw new Exception('काम पूरा करने का प्रमाण (Resolution Evidence) लिखना अनिवार्य है।');
-                $pdo->prepare("UPDATE tasks SET status = 'Resolved', resolution_evidence = ?, resolved_at = NOW() WHERE id = ?")
-                    ->execute([$evidence, $tid]);
-                $pdo->prepare("INSERT INTO task_events (task_id, actor, event_type, message) VALUES (?, ?, 'status', ?)")
-                    ->execute([$tid, $currentUser, "Resolved with evidence: {$evidence} (All reminders stopped)"]);
-            } elseif ($sub === 'not_resolved') {
-                $pdo->prepare("INSERT INTO task_events (task_id, actor, event_type, message) VALUES (?, ?, 'status', 'Checked: Not resolved yet; daily 10 AM reminders remain active.')")
-                    ->execute([$tid, $currentUser]);
-            } elseif ($sub === 'transfer') {
-                $newOwner = trim($_POST['new_owner'] ?? '');
-                if ($newOwner === '' || $newOwner === $task['owner']) throw new Exception('Valid new owner चुनें');
-                $prevs = array_filter(array_map('trim', explode(',', (string)$task['previous_owners'])));
-                if (!in_array($task['owner'], $prevs, true)) $prevs[] = $task['owner'];
-                $pdo->prepare("UPDATE tasks SET owner = ?, previous_owners = ? WHERE id = ?")
-                    ->execute([$newOwner, implode(',', $prevs), $tid]);
-                $pdo->prepare("INSERT INTO task_events (task_id, actor, event_type, message) VALUES (?, ?, 'transfer', ?)")
-                    ->execute([$tid, $currentUser, "Transferred from {$task['owner']} to {$newOwner} (Reminders active for both until resolved)"]);
-            }
-            echo json_encode(['status' => 'ok']);
-            break;
-
-        // Mark Notification as Read (Does NOT Resolve Task)
-        case 'read_notification':
-            $nid = (int)($_POST['notification_id'] ?? 0);
-            $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND recipient = ?")->execute([$nid, $currentUser]);
-            echo json_encode(['status' => 'ok']);
-            break;
-
-        // Sales CRM: Capture Lead / Record Human Reply / Price Sent / Customer Reply
-        case 'crm_action':
-            $crmSub = $_POST['crm_sub'] ?? '';
-            if ($crmSub === 'new_lead') {
-                $thread = trim($_POST['thread_id'] ?? ('wa-' . time()));
-                $ident  = trim($_POST['customer_identity'] ?? 'Unconfirmed WhatsApp Lead');
-                $msg    = trim($_POST['message'] ?? 'New Hosting/Domain Enquiry');
-                $stmt = $pdo->prepare("INSERT INTO sales_leads (thread_id, customer_identity, first_msg_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE customer_identity=VALUES(customer_identity)");
-                $stmt->execute([$thread, $ident]);
-                $lid = (int)$pdo->lastInsertId();
-                if ($lid > 0) {
-                    $tStmt = $pdo->prepare("INSERT INTO tasks (module_id, title, description, owner, task_kind, lead_id, due_at) VALUES (13, ?, ?, 'Chandrika', 'followup', ?, NOW())");
-                    $tStmt->execute(["New Sales Enquiry · {$ident}", "Incoming message: {$msg} (Reply within 30 working mins)", $lid]);
-                }
-            } elseif ($crmSub === 'human_reply') {
-                $lid = (int)$_POST['lead_id'];
-                $pdo->prepare("UPDATE sales_leads SET first_human_reply_at = IFNULL(first_human_reply_at, NOW()) WHERE id = ?")->execute([$lid]);
-            } elseif ($crmSub === 'price_sent') {
-                $lid = (int)$_POST['lead_id'];
-                $pdo->prepare("UPDATE sales_leads SET first_human_reply_at = IFNULL(first_human_reply_at, NOW()), price_sent_at = NOW(), customer_replied_after_price = 0 WHERE id = ?")->execute([$lid]);
-            } elseif ($crmSub === 'customer_replied') {
-                $lid = (int)$_POST['lead_id'];
-                $pdo->prepare("UPDATE sales_leads SET customer_replied_after_price = 1 WHERE id = ?")->execute([$lid]);
-                // Cancel remaining automated price follow-up tasks
-                $pdo->prepare("UPDATE tasks SET status = 'Cancelled', resolution_evidence = 'Customer replied; follow-up auto-cancelled' WHERE lead_id = ? AND task_kind = 'followup' AND status = 'Pending'")->execute([$lid]);
-            }
-            echo json_encode(['status' => 'ok']);
-            break;
-
-        // Upgrade A: WhatsApp Group .txt Export Importer -> Master Domain Vault
-        case 'import_domain_vault':
-            $rawText = trim($_POST['vault_text'] ?? '');
-            if ($rawText === '') throw new Exception('Text empty');
-            $lines = preg_split('/\r\n|\r|\n/', $rawText);
-            $registrars = ['NameSilo','Cosmotown','Spaceship','Namecheap','Dynadot','Atak','Nominalia','Register.it','Porkbun','one.com','BigRock','Domain.com','Epik','Name.com','Sav','GoDaddy','DreamHost','WHC','Unstoppable','Network Solutions','Wix','Directnic','Hioxindia','Hostinger','Truehost','Gname'];
-            $imported = 0;
-
-            $ins = $pdo->prepare("
-                INSERT INTO domain_vault (domain_name, registrar_name, account_email_or_id, notes)
-                VALUES (?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE registrar_name=VALUES(registrar_name), account_email_or_id=VALUES(account_email_or_id), notes=VALUES(notes)
-            ");
-
-            foreach ($lines as $line) {
-                if (preg_match('/([a-z0-9][a-z0-9\-]{1,62}\.(?:com|in|net|org|xyz|io|co\.in|shop|site|fun|cfd|click|ca|it|info|online))/i', $line, $domMatch)) {
-                    $domain = strtolower($domMatch[1]);
-                    $email = 'Check Group Note';
-                    if (preg_match('/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/', $line, $emMatch)) {
-                        $email = strtolower($emMatch[1]);
-                    }
-                    $foundReg = 'Unknown Registrar';
-                    foreach ($registrars as $r) {
-                        if (stripos($line, $r) !== false) { $foundReg = $r; break; }
-                    }
-                    if ($domain !== $email) {
-                        $ins->execute([$domain, $foundReg, $email, mb_substr($line, 0, 240)]);
-                        $imported++;
-                    }
-                }
-            }
-            echo json_encode(['status' => 'ok', 'imported_count' => $imported]);
-            break;
-
-        // Upgrade B & C: Add Payment Proof / Sanju Verification / Mark Delivered
-        case 'payment_action':
-            $pSub = $_POST['pay_sub'] ?? '';
-            if ($pSub === 'add_payment') {
-                $invId = (int)($_POST['whmcs_invoice_id'] ?? 0);
-                $cname = trim($_POST['customer_name'] ?? '');
-                $amt   = (float)($_POST['amount'] ?? 0);
-                $src   = $_POST['payment_source'] ?? 'WhatsApp_UPI';
-                $utr   = trim($_POST['payment_id_or_utr'] ?? '');
-                $owner = $_POST['delivery_owner'] ?? 'Chandrika';
-                $proofUrl = '';
-
-                if (!empty($_FILES['proof_image']['tmp_name'])) {
-                    $tmpFile = $_FILES['proof_image']['tmp_name'];
-                    if (filesize($tmpFile) > 5 * 1024 * 1024) {
-                        throw new Exception('Image upload failed: Size exceeds 5MB limit.');
-                    }
-                    $imgMeta = @getimagesize($tmpFile);
-                    $mime = function_exists('mime_content_type') ? @mime_content_type($tmpFile) : ($imgMeta['mime'] ?? '');
-                    $allowedMimes = [
-                        'image/jpeg' => 'jpg',
-                        'image/png'  => 'png',
-                        'image/webp' => 'webp'
-                    ];
-                    if ($imgMeta === false || !isset($allowedMimes[$mime])) {
-                        throw new Exception('Security Error: Only genuine image/jpeg, image/png, or image/webp files are allowed.');
-                    }
-
-                    $uploadDir = __DIR__ . '/uploads/';
-                    if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-                    $ext = $allowedMimes[$mime];
-                    $fname = 'proof_inv_' . $invId . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-                    if (move_uploaded_file($tmpFile, $uploadDir . $fname)) {
-                        $proofUrl = 'uploads/' . $fname;
-                    }
-                }
-                $stmt = $pdo->prepare("INSERT INTO payment_records (whmcs_invoice_id, customer_name, amount, payment_source, payment_id_or_utr, proof_file_url, delivery_owner) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$invId, $cname, $amt, $src, $utr, $proofUrl, $owner]);
-            } elseif ($pSub === 'sanju_verify') {
-                $pid = (int)$_POST['payment_row_id'];
-                $pdo->prepare("UPDATE payment_records SET sanju_verified = 1, whmcs_invoice_status = 'Paid' WHERE id = ?")->execute([$pid]);
-            } elseif ($pSub === 'mark_delivered') {
-                $pid = (int)$_POST['payment_row_id'];
-                $pdo->prepare("UPDATE payment_records SET service_delivered = 1 WHERE id = ?")->execute([$pid]);
-            }
-            echo json_encode(['status' => 'ok']);
-            break;
-
-        // WHM Server Add & 14-Privilege Live Sync
-        case 'whm_action':
-            $wSub = $_POST['whm_sub'] ?? '';
-            if ($wSub === 'add_server') {
-                $stmt = $pdo->prepare("INSERT INTO whm_servers (server_name, provider, hostname, whm_username, api_token, monthly_cost_inr, max_backup_gb) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                $stmt->execute([
-                    trim($_POST['server_name'] ?? 'SGP Dedicated Server'),
-                    trim($_POST['provider'] ?? 'OVHcloud'),
-                    trim($_POST['hostname'] ?? ''),
-                    trim($_POST['whm_username'] ?? 'root'),
-                    trim($_POST['api_token'] ?? ''),
-                    (float)($_POST['monthly_cost_inr'] ?? 15250),
-                    (int)($_POST['max_backup_gb'] ?? 20)
-                ]);
-                $sid = (int)$pdo->lastInsertId();
-                $syncRes = AmbitionInfraSync::syncWhmServer($sid);
-                echo json_encode(['status' => 'ok', 'sync' => $syncRes]);
-            } elseif ($wSub === 'sync_server') {
-                $sid = (int)$_POST['server_id'];
-                echo json_encode(AmbitionInfraSync::syncWhmServer($sid));
-            } elseif ($wSub === 'diagnostic') {
-                $sid = (int)$_POST['server_id'];
-                $type = $_POST['diag_type'] ?? 'packages';
-                $target = trim($_POST['target'] ?? '');
-                echo json_encode(AmbitionInfraSync::fetchWhmDiagnostic($sid, $type, $target));
-            }
-            break;
-
-        // Multi-LLM Advisor Chat (Embedded inside all 25 Modules)
-        case 'ask_ai':
-            $modId = (int)($_POST['module_id'] ?? 1);
-            $modTitle = trim($_POST['module_title'] ?? 'Overview');
-            $prompt = trim($_POST['prompt'] ?? '');
-            if ($prompt === '') throw new Exception('अपना सवाल लिखें');
-            $res = AmbitionAIBrain::askModuleAdvisor($modId, $modTitle, $prompt, $currentUser);
-            echo json_encode(['status' => 'ok', 'data' => $res]);
-            break;
-
-        // Switch Active LLM Provider (DeepSeek, Qwen, Gemini, Claude, OpenAI)
-        case 'set_llm_provider':
-            $prov = strtolower(trim($_POST['provider'] ?? 'deepseek'));
-            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('active_llm_provider', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)")
-                ->execute([$prov]);
-            echo json_encode(['status' => 'ok', 'active_llm_provider' => $prov]);
+            echo json_encode(['status' => 'ok', 'message' => 'Credentials updated successfully']);
             break;
 
         default:
-            echo json_encode(['status' => 'error', 'message' => 'Unknown API action']);
+            echo json_encode(['status' => 'error', 'message' => 'Invalid action']);
     }
 } catch (Throwable $e) {
     http_response_code(400);
