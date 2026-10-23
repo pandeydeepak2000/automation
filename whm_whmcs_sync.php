@@ -239,15 +239,19 @@ class AmbitionInfraSync {
      * WHMCS Read-Only API Caller (Uses WHMCS_API_IDENTIFIER & WHMCS_API_SECRET)
      */
     public static function callWhmcs(string $action, array $params = []): array {
-        if (empty(WHMCS_API_IDENTIFIER) || strpos(WHMCS_API_IDENTIFIER, 'YOUR_') === 0) {
-            return ['result' => 'error', 'message' => 'WHMCS Read-Only API Identifier not configured in config.php'];
+        $ident = get_sys_setting('whmcs_api_identifier', defined('WHMCS_API_IDENTIFIER') ? WHMCS_API_IDENTIFIER : '');
+        $secret = get_sys_setting('whmcs_api_secret', defined('WHMCS_API_SECRET') ? WHMCS_API_SECRET : '');
+        $urlBase = get_sys_setting('whmcs_url', defined('WHMCS_URL') ? WHMCS_URL : 'https://www.ambitionhost.in/user');
+
+        if (empty($ident) || strpos($ident, 'YOUR_') === 0) {
+            return ['result' => 'error', 'message' => 'WHMCS Read-Only API Identifier not configured in settings or config.php'];
         }
 
-        $url = rtrim(WHMCS_URL, '/') . '/includes/api.php';
+        $url = rtrim($urlBase, '/') . '/includes/api.php';
         $postData = array_merge([
             'action' => $action,
-            'identifier' => WHMCS_API_IDENTIFIER,
-            'secret' => WHMCS_API_SECRET,
+            'identifier' => $ident,
+            'secret' => $secret,
             'responsetype' => 'json'
         ], $params);
 

@@ -336,13 +336,31 @@ try {
         // 11. Module 25: Save System & Multi-LLM Settings directly to Database
         case 'save_system_settings':
             if (!$isAdmin) throw new Exception('Admin only');
+            $allowedKeys = [
+                'active_llm_provider', 'telegram_bot_token', 'aarav_telegram_chat_id',
+                'whmcs_url', 'whmcs_api_identifier', 'whmcs_api_secret',
+                'razorpay_key_id', 'razorpay_key_secret'
+            ];
             foreach ($_POST as $k => $v) {
-                if (str_starts_with($k, 'api_key_') || in_array($k, ['active_llm_provider', 'telegram_bot_token', 'aarav_telegram_chat_id'], true)) {
+                if (str_starts_with($k, 'api_key_') || in_array($k, $allowedKeys, true)) {
                     $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
                         ->execute([$k, trim((string)$v)]);
                 }
             }
             echo json_encode(['status' => 'ok']);
+            break;
+
+        case 'test_whmcs_connection':
+            if (!$isAdmin) throw new Exception('Admin only');
+            require_once __DIR__ . '/whm_whmcs_sync.php';
+            $res = AmbitionInfraSync::callWhmcs('GetClients', ['limitnum' => 5]);
+            if (($res['result'] ?? '') === 'success') {
+                $total = (int)($res['totalresults'] ?? 0);
+                echo json_encode(['status' => 'ok', 'message' => "✅ WHMCS API Connected Successfully! Found {$total} clients."]);
+            } else {
+                $errMsg = $res['message'] ?? ($res['raw'] ?? 'Failed to reach WHMCS API endpoint.');
+                echo json_encode(['status' => 'error', 'message' => "WHMCS API Error: " . $errMsg]);
+            }
             break;
 
         // 12. Change Email or Password (Owner/Admin can change anyone; Staff can change own)

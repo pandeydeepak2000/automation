@@ -382,25 +382,88 @@ dialog{border:1px solid #cbd5e1;border-radius:14px;padding:22px;max-width:680px;
           <?php endif; ?>
 
           <?php if ($activeModId === 25 && $isAdmin): ?>
-            <!-- MODULE 25: UI API KEYS & MULTI-LLM MANAGER -->
-            <div class="box" style="border-left:4px solid #7c3aed">
-              <h3>🔑 Multi-LLM & Telegram API Keys Manager (Save Directly to Database)</h3>
+            <!-- MODULE 25: WHMCS API, MULTI-LLM & TELEGRAM CREDENTIALS CENTER -->
+            <div class="box" style="border-left:4px solid #2563eb;margin-bottom:18px">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+                <div>
+                  <h3 style="margin:0 0 4px">🌐 WHMCS Read-Only API Integration</h3>
+                  <small style="color:#64748b">Clients, Invoices, Renewals, Suspended Accounts aur Tickets sync karne ke liye.</small>
+                </div>
+                <button type="button" id="btnTestWhmcs" onclick="testWhmcsConn()" class="btn-primary" style="background:#059669;border-color:#059669">🔍 Test WHMCS Connection</button>
+              </div>
+
+              <div style="background:#f8fafc;padding:12px 14px;border-radius:8px;border:1px solid #e2e8f0;margin:14px 0;font-size:13px;line-height:1.5;color:#334155">
+                💡 <b>WHMCS Me Key Kaise Banayein:</b><br>
+                1. WHMCS Admin me jayein: <code>Setup ➔ Staff Management ➔ Manage API Credentials</code> (ya WHMCS 8.x me <code>System Settings ➔ API Credentials</code>)।<br>
+                2. <b>Generate New API Credential</b> par click karein aur sirf <b>Read-Only</b> permissions select karein.<br>
+                3. Apne cPanel Server ka IP (<code><?=gethostbyname($_SERVER['SERVER_NAME'] ?? 'control.jixsite.com')?></code>) WHMCS API IP Access Restriction me whitelist karein.
+              </div>
+
+              <form id="whmcsSettingsForm" class="toolbar" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+                <input type="hidden" name="action" value="save_system_settings">
+                <div>
+                  <label style="font-size:12px;color:#64748b;font-weight:700">WHMCS URL</label>
+                  <input name="whmcs_url" value="<?=htmlspecialchars(get_sys_setting('whmcs_url', defined('WHMCS_URL')?WHMCS_URL:'https://www.ambitionhost.in/user'))?>" placeholder="https://www.ambitionhost.in/user" required>
+                </div>
+                <div>
+                  <label style="font-size:12px;color:#64748b;font-weight:700">API Identifier</label>
+                  <input name="whmcs_api_identifier" value="<?=htmlspecialchars(get_sys_setting('whmcs_api_identifier', (defined('WHMCS_API_IDENTIFIER') && strpos(WHMCS_API_IDENTIFIER,'YOUR_')!==0)?WHMCS_API_IDENTIFIER:''))?>" placeholder="Alphanumeric Identifier Key" required>
+                </div>
+                <div>
+                  <label style="font-size:12px;color:#64748b;font-weight:700">API Secret</label>
+                  <input type="password" name="whmcs_api_secret" value="<?=htmlspecialchars(get_sys_setting('whmcs_api_secret', (defined('WHMCS_API_SECRET') && strpos(WHMCS_API_SECRET,'YOUR_')!==0)?WHMCS_API_SECRET:''))?>" placeholder="••••••••••••••••" required>
+                </div>
+                <div style="display:flex;align-items:flex-end">
+                  <button type="submit" class="btn-primary" style="width:100%">💾 Save WHMCS Keys</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="box" style="border-left:4px solid #7c3aed;margin-bottom:18px">
+              <h3 style="margin:0 0 6px">🤖 Multi-LLM AI Brainstorm Keys & Active Provider</h3>
+              <small style="color:#64748b;display:block;margin-bottom:14px">DeepSeek, Qwen, Gemini, Claude, OpenAI keys ko live database me save karein.</small>
               <form id="settingsForm">
                 <input type="hidden" name="action" value="save_system_settings">
-                <div class="toolbar">
-                  <select name="active_llm_provider">
-                    <?php foreach (['deepseek','qwen','gemini','openai','claude'] as $p): ?>
-                      <option value="<?=$p?>" <?=$activeLlm===$p?'selected':''?>>Active Brain: <?=strtoupper($p)?></option>
-                    <?php endforeach; ?>
-                  </select>
-                  <input name="api_key_deepseek" placeholder="DeepSeek API Key">
-                  <input name="api_key_qwen" placeholder="Qwen API Key">
-                  <input name="api_key_gemini" placeholder="Gemini API Key">
-                  <input name="api_key_openai" placeholder="OpenAI API Key">
-                  <input name="api_key_claude" placeholder="Claude API Key">
-                  <input name="telegram_bot_token" placeholder="Telegram Bot Token">
-                  <input name="aarav_telegram_chat_id" placeholder="Aarav Telegram Chat ID">
-                  <button type="submit" class="btn-primary">Save Settings</button>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+                  <div>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">Active AI Brain</label>
+                    <select name="active_llm_provider" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid #cbd5e1">
+                      <?php foreach (['deepseek','qwen','gemini','openai','claude'] as $p): ?>
+                        <option value="<?=$p?>" <?=$activeLlm===$p?'selected':''?>>Active Brain: <?=strtoupper($p)?> <?=($p==='deepseek'?'(Recommended Primary)':'')?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">DeepSeek API Key (Primary)</label>
+                    <input type="password" name="api_key_deepseek" value="<?=htmlspecialchars(get_sys_setting('api_key_deepseek',''))?>" placeholder="sk-...">
+                  </div>
+                  <div>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">Qwen / DashScope Key</label>
+                    <input type="password" name="api_key_qwen" value="<?=htmlspecialchars(get_sys_setting('api_key_qwen',''))?>" placeholder="sk-...">
+                  </div>
+                  <div>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">Google Gemini API Key</label>
+                    <input type="password" name="api_key_gemini" value="<?=htmlspecialchars(get_sys_setting('api_key_gemini',''))?>" placeholder="AIzaSy...">
+                  </div>
+                  <div>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">OpenAI API Key</label>
+                    <input type="password" name="api_key_openai" value="<?=htmlspecialchars(get_sys_setting('api_key_openai',''))?>" placeholder="sk-...">
+                  </div>
+                  <div>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">Anthropic Claude Key</label>
+                    <input type="password" name="api_key_claude" value="<?=htmlspecialchars(get_sys_setting('api_key_claude',''))?>" placeholder="sk-ant-...">
+                  </div>
+                  <div>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">Telegram Bot Token (Alerts)</label>
+                    <input type="password" name="telegram_bot_token" value="<?=htmlspecialchars(get_sys_setting('telegram_bot_token',''))?>" placeholder="bot123456:ABC-DEF...">
+                  </div>
+                  <div>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">Aarav Telegram Chat ID</label>
+                    <input name="aarav_telegram_chat_id" value="<?=htmlspecialchars(get_sys_setting('aarav_telegram_chat_id',''))?>" placeholder="123456789">
+                  </div>
+                </div>
+                <div style="margin-top:14px;text-align:right">
+                  <button type="submit" class="btn-primary" style="background:#7c3aed;border-color:#7c3aed">💾 Save AI & Telegram Keys</button>
                 </div>
               </form>
             </div>
@@ -590,6 +653,22 @@ const setForm = document.getElementById('settingsForm');
 if (setForm) setForm.onsubmit = async (e) => {
   e.preventDefault(); await postApi(new FormData(setForm)); alert('✅ Settings Saved!'); location.reload();
 };
+
+const whmcsSetForm = document.getElementById('whmcsSettingsForm');
+if (whmcsSetForm) whmcsSetForm.onsubmit = async (e) => {
+  e.preventDefault(); await postApi(new FormData(whmcsSetForm)); alert('✅ WHMCS API Settings Saved to Database!'); location.reload();
+};
+
+async function testWhmcsConn() {
+  const btn = document.getElementById('btnTestWhmcs');
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Connecting...'; btn.disabled = true; }
+  const fd = new FormData();
+  fd.append('action', 'test_whmcs_connection');
+  const r = await postApi(fd);
+  if (btn) { btn.textContent = oldText; btn.disabled = false; }
+  alert(r.message || 'WHMCS Connection Test Completed');
+}
 
 const payForm = document.getElementById('paymentForm');
 if (payForm) payForm.onsubmit = async (e) => {
