@@ -324,20 +324,51 @@ if (in_array($activeModId, [10, 11], true)):
   </table>
 </div>
 
-<dialog id="whmAddModal" style="max-width:480px">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-    <h3 style="margin:0">Connect WHM Server</h3>
-    <button onclick="document.getElementById('whmAddModal').close()">✕</button>
+<dialog id="whmAddModal" style="max-width:520px;border-radius:12px;border:1px solid #334155;background:#0f172a;color:#f8fafc;padding:24px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <h3 style="margin:0;color:#fff">🖥️ Connect WHM Server</h3>
+    <button onclick="document.getElementById('whmAddModal').close()" style="background:transparent;border:0;color:#94a3b8;font-size:18px;cursor:pointer">✕</button>
   </div>
+
+  <div style="background:#1e293b;padding:12px 14px;border-radius:8px;border:1px solid #334155;margin-bottom:14px;font-size:13px;line-height:1.5;color:#cbd5e1">
+    💡 <b>WHM Me Token Kaha Milega:</b><br>
+    1. WHM me login karein (<code>Port 2087</code>).<br>
+    2. Search karein: <b>Manage API Tokens</b> ➔ <b>Generate Token</b>.<br>
+    3. Privileges me 14 ticks select karein (Account Information, List Accounts, Bandwidth, Load, etc.)<br>
+    4. Hostname me direct Server IP (e.g. <code>51.79.xxx.xxx</code>) ya Domain daal sakte hain.
+  </div>
+
   <form id="addWhmForm">
     <input type="hidden" name="action" value="whm_action">
     <input type="hidden" name="whm_sub" value="add_server">
-    <input name="server_name" placeholder="Server Name (e.g. SGP Dedicated)" required style="width:100%;margin-bottom:8px">
-    <input name="provider" placeholder="Provider (OVH / Verpex / NameCrane)" required style="width:100%;margin-bottom:8px">
-    <input name="hostname" placeholder="Hostname / IP (e.g. sgp.ambitionhost.in)" required style="width:100%;margin-bottom:8px">
-    <input name="whm_username" value="root" placeholder="WHM User" required style="width:100%;margin-bottom:8px">
-    <input name="api_token" placeholder="WHM API Token" required style="width:100%;margin-bottom:12px">
-    <button type="submit" class="btn-primary" style="width:100%">Connect Server →</button>
+    
+    <label style="font-size:12px;color:#94a3b8">Server Display Name</label>
+    <input name="server_name" placeholder="e.g. OVH Singapore Dedicated / Verpex" required style="width:100%;margin:4px 0 10px;padding:8px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#fff">
+
+    <label style="font-size:12px;color:#94a3b8">Hosting Provider</label>
+    <input name="provider" placeholder="OVH / Verpex / NameCrane / HostHatch" required style="width:100%;margin:4px 0 10px;padding:8px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#fff">
+
+    <label style="font-size:12px;color:#94a3b8">Hostname or Server IP</label>
+    <input name="hostname" placeholder="e.g. 51.79.162.100 ya sgp.ambitionhost.in" required style="width:100%;margin:4px 0 10px;padding:8px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#fff">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div>
+        <label style="font-size:12px;color:#94a3b8">WHM Username</label>
+        <input name="whm_username" value="root" required style="width:100%;margin:4px 0 10px;padding:8px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#fff">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#94a3b8">JetBackup Limit (GB)</label>
+        <input name="max_backup_gb" type="number" value="20" required style="width:100%;margin:4px 0 10px;padding:8px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#fff">
+      </div>
+    </div>
+
+    <label style="font-size:12px;color:#94a3b8">WHM API Token</label>
+    <input type="password" name="api_token" placeholder="Paste your alphanumeric WHM API token" required style="width:100%;margin:4px 0 16px;padding:8px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#fff">
+
+    <div style="display:flex;gap:10px">
+      <button type="button" id="btnTestWhmModal" onclick="testWhmInModal()" class="btn-primary" style="background:#059669;border-color:#059669;flex:1">🔍 Test Connection</button>
+      <button type="submit" class="btn-primary" style="flex:1">💾 Save & Connect Server</button>
+    </div>
   </form>
 </dialog>
 <?php endif; ?>

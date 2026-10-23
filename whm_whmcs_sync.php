@@ -28,9 +28,9 @@ class AmbitionInfraSync {
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_TIMEOUT => 25,
+            CURLOPT_SSL_VERIFYPEER => false, // Allow connection via direct IP or self-signed WHM cert
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_TIMEOUT => 20,
             CURLOPT_HTTPHEADER => [
                 'Authorization: whm ' . trim($username) . ':' . trim($apiToken)
             ]
@@ -51,6 +51,29 @@ class AmbitionInfraSync {
         }
 
         return $decoded;
+    }
+
+    /**
+     * 1-Click WHM Connection Test
+     */
+    public static function testWhmServer(string $hostname, string $username, string $apiToken): array {
+        $res = self::callWhmApi($hostname, $username, $apiToken, 'version');
+        if (isset($res['version'])) {
+            $acctRes = self::callWhmApi($hostname, $username, $apiToken, 'listaccts');
+            $acctCount = isset($acctRes['data']['acct']) ? count($acctRes['data']['acct']) : 0;
+            return [
+                'status' => 'ok',
+                'version' => $res['version'],
+                'accounts' => $acctCount,
+                'message' => "✅ WHM Connected! Version: {$res['version']}, Found {$acctCount} cPanel accounts."
+            ];
+        }
+        $err = $res['error'] ?? ($res['metadata']['reason'] ?? 'Failed to authenticate with WHM API Token');
+        return ['status' => 'error', 'message' => "WHM Error: {$err}"];
+    }
+
+    public static function syncSingleServer(int $serverId): array {
+        return self::syncWhmServer($serverId);
     }
 
     /**

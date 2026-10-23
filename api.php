@@ -327,9 +327,17 @@ try {
                     ]);
                 echo json_encode(['status' => 'ok']);
             } elseif ($wSub === 'sync_server') {
+                require_once __DIR__ . '/whm_whmcs_sync.php';
                 $sid = (int)($_POST['server_id'] ?? 0);
-                $res = AmbitionInfraSync::syncSingleServer($sid);
+                $res = AmbitionInfraSync::syncWhmServer($sid);
                 echo json_encode(['status' => 'ok', 'data' => $res]);
+            } elseif ($wSub === 'test_server') {
+                require_once __DIR__ . '/whm_whmcs_sync.php';
+                $host = trim($_POST['hostname'] ?? '');
+                $user = trim($_POST['whm_username'] ?? 'root');
+                $tok  = trim($_POST['api_token'] ?? '');
+                $test = AmbitionInfraSync::testWhmServer($host, $user, $tok);
+                echo json_encode($test);
             }
             break;
 

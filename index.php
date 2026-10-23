@@ -677,17 +677,37 @@ if (payForm) payForm.onsubmit = async (e) => {
 
 const whmForm = document.getElementById('addWhmForm');
 if (whmForm) whmForm.onsubmit = async (e) => {
-  e.preventDefault(); await postApi(new FormData(whmForm)); location.reload();
+  e.preventDefault();
+  const r = await postApi(new FormData(whmForm));
+  if (r.status === 'ok') {
+    alert('✅ WHM Server successfully connected & saved!');
+    location.reload();
+  }
 };
 
-async function verifyPay(id, sub) {
-  const fd = new FormData(); fd.append('action', 'payment_action'); fd.append('pay_sub', sub); fd.append('payment_row_id', id);
-  await postApi(fd); location.reload();
+async function testWhmInModal() {
+  const form = document.getElementById('addWhmForm');
+  const btn = document.getElementById('btnTestWhmModal');
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Connecting...'; btn.disabled = true; }
+  const fd = new FormData(form);
+  fd.set('whm_sub', 'test_server');
+  const r = await postApi(fd);
+  if (btn) { btn.textContent = oldText; btn.disabled = false; }
+  alert(r.message || (r.status === 'ok' ? '✅ Connected!' : 'Connection Error'));
 }
 
 async function syncWhm(id) {
+  const btn = window.event ? window.event.target : null;
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Syncing...'; btn.disabled = true; }
   const fd = new FormData(); fd.append('action', 'whm_action'); fd.append('whm_sub', 'sync_server'); fd.append('server_id', id);
-  await fetch('api.php', { method: 'POST', body: fd }); location.reload();
+  const r = await postApi(fd);
+  if (btn) { btn.textContent = oldText; btn.disabled = false; }
+  if (r.status === 'ok') {
+    alert('✅ Server Synced! Updated account counts, disk usage, and load average.');
+    location.reload();
+  }
 }
 
 async function importVault() {
