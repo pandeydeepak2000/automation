@@ -93,13 +93,13 @@ function db(): PDO {
                   KEY `ticket_id` (`ticket_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             ");
-            @$pdo->exec("ALTER TABLE `users` ADD COLUMN `display_title` varchar(100) NOT NULL DEFAULT ''");
-            @$pdo->exec("ALTER TABLE `users` ADD COLUMN `allowed_modules` varchar(255) DEFAULT '1'");
-            @$pdo->exec("ALTER TABLE `users` ADD COLUMN `can_graphs` tinyint(1) DEFAULT 0");
-            @$pdo->exec("ALTER TABLE `users` MODIFY COLUMN `role` enum('Admin','Owner','Sales','Domain','Billing','Billing_Domain','Support_Tech','B.D.E.') NOT NULL");
-        } catch (Throwable $e) {
-            die("<div style='font-family:sans-serif;padding:24px;background:#fee2e2;color:#991b1b;border-radius:10px;margin:30px auto;max-width:600px;border:1px solid #ef4444'><h3>⚠️ Database Connection / Schema Error</h3><p>" . htmlspecialchars($e->getMessage()) . "</p></div>");
-        }
+        } catch (Throwable $e) {}
+
+        // Safe column migrations (isolated try-catch so existing columns never error)
+        try { $pdo->exec("ALTER TABLE `users` ADD COLUMN `display_title` varchar(100) NOT NULL DEFAULT ''"); } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE `users` ADD COLUMN `allowed_modules` varchar(255) DEFAULT '1'"); } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE `users` ADD COLUMN `can_graphs` tinyint(1) DEFAULT 0"); } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE `users` MODIFY COLUMN `role` enum('Admin','Owner','Sales','Domain','Billing','Billing_Domain','Support_Tech','B.D.E.') NOT NULL"); } catch (Throwable $e) {}
     }
     return $pdo;
 }
