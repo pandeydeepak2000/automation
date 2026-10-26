@@ -49,6 +49,7 @@ if ($activeModId === 1):
 // ==========================================
 if ($activeModId === 2):
   require_once __DIR__ . '/whm_whmcs_sync.php';
+  AmbitionInfraSync::ensureWhmcsCacheColumns();
   $qClient = trim($_GET['search_client'] ?? '');
   $clientRows = [];
 
