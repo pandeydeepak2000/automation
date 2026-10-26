@@ -138,9 +138,13 @@ if ($activeModId === 2):
       <?php else: foreach ($clientRows as $cr): ?>
         <tr>
           <td>
-            <a href="<?=htmlspecialchars(whmcs_deep_link('client', $cr['client_id']))?>" target="_blank" style="color:#2563eb;font-weight:700">
-              #<?=$cr['client_id']?> ↗
-            </a>
+            <?php if (!empty($cr['client_id'])): ?>
+              <a href="<?=htmlspecialchars(whmcs_deep_link('client', $cr['client_id']))?>" target="_blank" style="color:#2563eb;font-weight:700">
+                #<?=$cr['client_id']?> ↗
+              </a>
+            <?php else: ?>
+              <span class="pill pill-dark" style="font-size:11px;background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1">cPanel</span>
+            <?php endif; ?>
           </td>
           <td>
             <div style="font-weight:600;color:#0f172a"><?=htmlspecialchars((string)($cr['client_name'] ?: 'Ambition Client'))?></div>
@@ -162,11 +166,20 @@ if ($activeModId === 2):
             </a>
           </td>
           <td>
-            <b style="color:#16a34a">₹<?=number_format((float)$cr['recurring_amount'], 2)?></b><br>
-            <small style="color:#64748b"><?=htmlspecialchars((string)$cr['billing_cycle'])?></small>
+            <?php if ((float)$cr['recurring_amount'] > 0): ?>
+              <b style="color:#16a34a">₹<?=number_format((float)$cr['recurring_amount'], 2)?></b><br>
+              <small style="color:#64748b"><?=htmlspecialchars((string)$cr['billing_cycle'])?></small>
+            <?php else: ?>
+              <span style="color:#94a3b8;font-weight:600">₹0.00</span><br>
+              <small style="color:#94a3b8"><?=htmlspecialchars((string)($cr['billing_cycle'] ?: 'Monthly'))?></small>
+            <?php endif; ?>
           </td>
           <td>
-            <small style="color:#475569"><?=($cr['next_due_date'] ? date('d M Y', strtotime($cr['next_due_date'])) : 'Active')?></small>
+            <?php if (!empty($cr['next_due_date']) && $cr['next_due_date'] !== '0000-00-00'): ?>
+              <small style="color:#0f172a;font-weight:600"><?=date('d M Y', strtotime($cr['next_due_date']))?></small>
+            <?php else: ?>
+              <small style="color:#94a3b8">Active</small>
+            <?php endif; ?>
           </td>
           <td>
             <span class="pill <?=$cr['status']==='Active'?'pill-green':($cr['status']==='Suspended'?'pill-red':'pill-dark')?>">
@@ -175,7 +188,13 @@ if ($activeModId === 2):
           </td>
           <td>
             <?php if ($cr['item_type'] === 'hosting'): ?>
-              <a href="https://www.ambitionhost.in/user/devokedev/clientsservices.php?id=<?=$cr['whmcs_item_id']?>" target="_blank" class="btn-dark" style="font-size:11px;padding:4px 8px">Service ↗</a>
+              <?php if ((int)$cr['whmcs_item_id'] < 1000000 && (int)$cr['whmcs_item_id'] > 0): ?>
+                <a href="https://www.ambitionhost.in/user/devokedev/clientsservices.php?id=<?=$cr['whmcs_item_id']?>" target="_blank" class="btn-dark" style="font-size:11px;padding:4px 8px">Service ↗</a>
+              <?php elseif (!empty($cr['client_id'])): ?>
+                <a href="<?=htmlspecialchars(whmcs_deep_link('client', $cr['client_id']))?>" target="_blank" class="btn-dark" style="font-size:11px;padding:4px 8px">Client ↗</a>
+              <?php else: ?>
+                <a href="https://<?=htmlspecialchars((string)$cr['domain'])?>:2083" target="_blank" class="btn-dark" style="font-size:11px;padding:4px 8px;background:#334155">cPanel ↗</a>
+              <?php endif; ?>
             <?php else: ?>
               <a href="https://www.ambitionhost.in/user/devokedev/clientsdomains.php?id=<?=$cr['whmcs_item_id']?>" target="_blank" class="btn-dark" style="font-size:11px;padding:4px 8px">Domain ↗</a>
             <?php endif; ?>

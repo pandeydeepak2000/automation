@@ -355,91 +355,147 @@ class AmbitionInfraSync {
     }
 
     /**
-     * Sync Active Hosting Products and Domains into whmcs_items_cache
+     * Sync Active Hosting Products and Domains into whmcs_items_cache with Pagination & Real Client Matching
      */
     public static function syncWhmcsItemsCache(int $limit = 500): array {
         self::ensureWhmcsCacheColumns();
         $pdo = db();
         $synced = 0;
 
-        // 1. Fetch Hosting Products from WHMCS
+        // 1. Fetch Hosting Products from WHMCS with Pagination
         try {
-            $pRes = self::callWhmcs('GetClientsProducts', ['limitnum' => $limit]);
-            if (!empty($pRes['products']['product'])) {
-                $ins = $pdo->prepare("
-                    INSERT INTO whmcs_items_cache (
-                        item_type, whmcs_item_id, client_id, domain, package_name,
-                        billing_cycle, recurring_amount, status, reg_date, next_due_date, updated_at
-                    ) VALUES ('hosting', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-                    ON DUPLICATE KEY UPDATE
-                        client_id = VALUES(client_id),
-                        domain = VALUES(domain),
-                        package_name = VALUES(package_name),
-                        billing_cycle = VALUES(billing_cycle),
-                        recurring_amount = VALUES(recurring_amount),
-                        status = VALUES(status),
-                        next_due_date = VALUES(next_due_date),
-                        updated_at = NOW()
-                ");
+            $ins = $pdo->prepare("
+                INSERT INTO whmcs_items_cache (
+                    item_type, whmcs_item_id, client_id, domain, package_name,
+                    billing_cycle, recurring_amount, status, reg_date, next_due_date, updated_at
+                ) VALUES ('hosting', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ON DUPLICATE KEY UPDATE
+                    client_id = VALUES(client_id),
+                    domain = VALUES(domain),
+                    package_name = VALUES(package_name),
+                    billing_cycle = VALUES(billing_cycle),
+                    recurring_amount = VALUES(recurring_amount),
+                    status = VALUES(status),
+                    next_due_date = VALUES(next_due_date),
+                    updated_at = NOW()
+            ");
 
-                foreach ($pRes['products']['product'] as $p) {
+            $page = 0;
+            $perPage = 100;
+            do {
+                $pRes = self::callWhmcs('GetClientsProducts', [
+                    'limitstart' => $page * $perPage,
+                    'limitnum'   => $perPage
+                ]);
+
+                if (empty($pRes['products']['product']) && $page === 0) {
+                    $pRes = self::callWhmcs('GetClientsProducts', [
+                        'status'     => 'Active',
+                        'limitstart' => 0,
+                        'limitnum'   => $perPage
+                    ]);
+                }
+
+                if (empty($pRes['products']['product'])) {
+                    break;
+                }
+
+                $products = $pRes['products']['product'];
+                foreach ($products as $p) {
+                    $cid = (int)($p['clientid'] ?? 0);
+                    $dom = trim((string)($p['domain'] ?? ''));
+                    $pkg = (string)($p['name'] ?? ($p['groupname'] ?? 'Hosting Package'));
+                    $cycle = (string)($p['billingcycle'] ?? 'Monthly');
+                    $amt = (float)($p['recurringamount'] ?? 0);
+                    $st = (string)($p['status'] ?? 'Active');
+                    $reg = !empty($p['regdate']) ? $p['regdate'] : null;
+                    $due = !empty($p['nextduedate']) ? $p['nextduedate'] : null;
+
                     $ins->execute([
                         (int)($p['id'] ?? 0),
-                        (int)($p['clientid'] ?? 0),
-                        (string)($p['domain'] ?? ''),
-                        (string)($p['name'] ?? ($p['groupname'] ?? 'Hosting Plan')),
-                        (string)($p['billingcycle'] ?? 'Monthly'),
-                        (float)($p['recurringamount'] ?? 0),
-                        (string)($p['status'] ?? 'Active'),
-                        !empty($p['regdate']) ? $p['regdate'] : null,
-                        !empty($p['nextduedate']) ? $p['nextduedate'] : null
+                        $cid,
+                        $dom,
+                        $pkg,
+                        $cycle,
+                        $amt,
+                        $st,
+                        $reg,
+                        $due
                     ]);
                     $synced++;
                 }
-            }
+
+                $total = (int)($pRes['totalresults'] ?? 0);
+                $returned = (int)($pRes['numreturned'] ?? count($products));
+                $page++;
+            } while ($returned >= $perPage && ($page * $perPage) < $total && $page < 30);
         } catch (Throwable $e) {
             error_log("WHMCS GetClientsProducts error: " . $e->getMessage());
         }
 
-        // 2. Fetch Domains from WHMCS
+        // 2. Fetch ALL Managed Domains from WHMCS with Pagination
         try {
-            $dRes = self::callWhmcs('GetClientsDomains', ['limitnum' => $limit]);
-            if (!empty($dRes['domains']['domain'])) {
-                $insD = $pdo->prepare("
-                    INSERT INTO whmcs_items_cache (
-                        item_type, whmcs_item_id, client_id, domain, package_name,
-                        billing_cycle, recurring_amount, status, reg_date, next_due_date, updated_at
-                    ) VALUES ('domain', ?, ?, ?, 'Domain Registration', 'Annually', ?, ?, ?, ?, NOW())
-                    ON DUPLICATE KEY UPDATE
-                        client_id = VALUES(client_id),
-                        domain = VALUES(domain),
-                        recurring_amount = VALUES(recurring_amount),
-                        status = VALUES(status),
-                        next_due_date = VALUES(next_due_date),
-                        updated_at = NOW()
-                ");
+            $insD = $pdo->prepare("
+                INSERT INTO whmcs_items_cache (
+                    item_type, whmcs_item_id, client_id, domain, package_name,
+                    billing_cycle, recurring_amount, status, reg_date, next_due_date, updated_at
+                ) VALUES ('domain', ?, ?, ?, 'Domain Registration', ?, ?, ?, ?, ?, NOW())
+                ON DUPLICATE KEY UPDATE
+                    client_id = VALUES(client_id),
+                    domain = VALUES(domain),
+                    billing_cycle = VALUES(billing_cycle),
+                    recurring_amount = VALUES(recurring_amount),
+                    status = VALUES(status),
+                    next_due_date = VALUES(next_due_date),
+                    updated_at = NOW()
+            ");
 
-                foreach ($dRes['domains']['domain'] as $d) {
+            $page = 0;
+            $perPage = 100;
+            do {
+                $dRes = self::callWhmcs('GetClientsDomains', [
+                    'limitstart' => $page * $perPage,
+                    'limitnum'   => $perPage
+                ]);
+
+                if (empty($dRes['domains']['domain'])) {
+                    break;
+                }
+
+                $domains = $dRes['domains']['domain'];
+                foreach ($domains as $d) {
+                    $cid = (int)($d['userid'] ?? 0);
+                    $domName = trim((string)($d['domainname'] ?? ''));
+                    $amt = (float)($d['recurringamount'] ?? ($d['firstpaymentamount'] ?? 0));
+                    $cycle = !empty($d['regperiod']) ? "{$d['regperiod']} Year(s)" : 'Annually';
+                    $st = (string)($d['status'] ?? 'Active');
+                    $reg = !empty($d['registrationdate']) ? $d['registrationdate'] : null;
+                    $due = !empty($d['nextduedate']) ? $d['nextduedate'] : (!empty($d['expirydate']) ? $d['expirydate'] : null);
+
                     $insD->execute([
                         (int)($d['id'] ?? 0),
-                        (int)($d['userid'] ?? 0),
-                        (string)($d['domainname'] ?? ''),
-                        (float)($d['recurringamount'] ?? 0),
-                        (string)($d['status'] ?? 'Active'),
-                        !empty($d['registrationdate']) ? $d['registrationdate'] : null,
-                        !empty($d['nextduedate']) ? $d['nextduedate'] : null
+                        $cid,
+                        $domName,
+                        $cycle,
+                        $amt,
+                        $st,
+                        $reg,
+                        $due
                     ]);
                     $synced++;
                 }
-            }
+
+                $total = (int)($dRes['totalresults'] ?? 0);
+                $returned = (int)($dRes['numreturned'] ?? count($domains));
+                $page++;
+            } while ($returned >= $perPage && ($page * $perPage) < $total && $page < 40);
         } catch (Throwable $e) {
             error_log("WHMCS GetClientsDomains error: " . $e->getMessage());
         }
 
-        // 3. Populate Hosting from WHM Accounts (All 327 active cPanel accounts on server)
+        // 3. Populate WHM Server Accounts and match to Real WHMCS Clients & Pricing
         try {
             $whmAccounts = $pdo->query("SELECT * FROM whm_accounts")->fetchAll();
-            // If whm_accounts table is empty, auto-sync WHM server first
             if (empty($whmAccounts)) {
                 $srv = $pdo->query("SELECT id FROM whm_servers ORDER BY id ASC LIMIT 1")->fetch();
                 if ($srv) {
@@ -453,25 +509,98 @@ class AmbitionInfraSync {
                     INSERT INTO whmcs_items_cache (
                         item_type, whmcs_item_id, client_id, domain, package_name,
                         client_email, client_name, billing_cycle, recurring_amount, status, updated_at
-                    ) VALUES ('hosting', ?, ?, ?, ?, ?, ?, 'Monthly', 0.00, ?, NOW())
+                    ) VALUES ('hosting', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                     ON DUPLICATE KEY UPDATE
+                        client_id = VALUES(client_id),
                         domain = VALUES(domain),
                         package_name = VALUES(package_name),
                         client_email = VALUES(client_email),
                         client_name = VALUES(client_name),
+                        billing_cycle = VALUES(billing_cycle),
+                        recurring_amount = VALUES(recurring_amount),
                         status = VALUES(status),
                         updated_at = NOW()
                 ");
 
+                // Pre-map cached items by domain
+                $domainMap = [];
+                $cachedItems = $pdo->query("SELECT domain, client_id, package_name, billing_cycle, recurring_amount, next_due_date, client_email, client_name FROM whmcs_items_cache")->fetchAll();
+                foreach ($cachedItems as $ci) {
+                    if (!empty($ci['domain'])) {
+                        $domainMap[strtolower(trim($ci['domain']))] = $ci;
+                    }
+                }
+
                 foreach ($whmAccounts as $wa) {
+                    $domainLower = strtolower(trim($wa['domain']));
                     $status = !empty($wa['is_suspended']) ? 'Suspended' : 'Active';
+                    $ownerEmail = (string)($wa['owner_email'] ?: '');
+                    $cUser = (string)$wa['cpanel_user'];
+                    $planName = (string)($wa['plan_name'] ?: 'Hosting cPanel');
+
+                    $realClientId = 0;
+                    $realPkg = $planName;
+                    $realCycle = 'Monthly';
+                    $realAmount = 0.00;
+                    $clientName = $cUser;
+
+                    // A. Check if already matched in WHMCS cache by domain
+                    if (isset($domainMap[$domainLower])) {
+                        $matched = $domainMap[$domainLower];
+                        $realClientId = (int)$matched['client_id'];
+                        $realAmount = (float)$matched['recurring_amount'];
+                        $realCycle = (string)($matched['billing_cycle'] ?: 'Monthly');
+                        $realPkg = (string)($matched['package_name'] ?: $planName);
+                        if (!empty($matched['client_name'])) {
+                            $clientName = $matched['client_name'];
+                        }
+                    }
+
+                    // B. If not matched, try WHMCS lookup by domain
+                    if ($realClientId === 0 && !empty($domainLower)) {
+                        try {
+                            $lookup = self::callWhmcs('GetClientsProducts', ['domain' => $wa['domain']]);
+                            if (!empty($lookup['products']['product'][0])) {
+                                $lp = $lookup['products']['product'][0];
+                                $realClientId = (int)($lp['clientid'] ?? 0);
+                                $realAmount = (float)($lp['recurringamount'] ?? 0);
+                                $realCycle = (string)($lp['billingcycle'] ?? 'Monthly');
+                                $realPkg = (string)($lp['name'] ?? ($lp['groupname'] ?? $planName));
+                            }
+                        } catch (Throwable $e) {}
+                    }
+
+                    // C. If still not matched, try WHMCS client lookup by owner_email
+                    if ($realClientId === 0 && !empty($ownerEmail) && strpos($ownerEmail, '@') !== false) {
+                        try {
+                            $cLookup = self::callWhmcs('GetClients', ['search' => $ownerEmail, 'limitnum' => 1]);
+                            if (!empty($cLookup['clients']['client'][0])) {
+                                $cl = $cLookup['clients']['client'][0];
+                                $realClientId = (int)($cl['id'] ?? 0);
+                                $clientName = trim(($cl['firstname'] ?? '') . ' ' . ($cl['lastname'] ?? ''));
+                            }
+                        } catch (Throwable $e) {}
+                    }
+
+                    // D. If recurring amount is 0 and client ID found, check their latest invoice
+                    if ($realClientId > 0 && $realAmount <= 0) {
+                        try {
+                            $invLookup = self::callWhmcs('GetInvoices', ['userid' => $realClientId, 'limitnum' => 1, 'status' => 'Paid']);
+                            if (!empty($invLookup['invoices']['invoice'][0])) {
+                                $realAmount = (float)($invLookup['invoices']['invoice'][0]['total'] ?? 0);
+                            }
+                        } catch (Throwable $e) {}
+                    }
+
                     $insWhm->execute([
                         1000000 + (int)$wa['id'],
-                        (int)($wa['server_id'] ?: 1),
+                        $realClientId, // REAL WHMCS CLIENT ID (or 0 if unlinked), NEVER fake 1!
                         (string)$wa['domain'],
-                        (string)($wa['plan_name'] ?: 'Hosting cPanel'),
-                        (string)($wa['owner_email'] ?: ''),
-                        (string)$wa['cpanel_user'],
+                        $realPkg,
+                        $ownerEmail,
+                        $clientName,
+                        $realCycle,
+                        $realAmount,
                         $status
                     ]);
                     $synced++;
@@ -481,7 +610,105 @@ class AmbitionInfraSync {
             error_log("WHM Accounts cache sync error: " . $e->getMessage());
         }
 
+        // 4. Batch enrich client names and emails for client_ids
+        try {
+            self::enrichClientDetails();
+        } catch (Throwable $e) {}
+
+        // 5. Sync Invoices from WHMCS
+        try {
+            self::syncWhmcsInvoices(100);
+        } catch (Throwable $e) {}
+
         return ['status' => 'ok', 'synced_count' => $synced];
+    }
+
+    /**
+     * Batch enrich client name and email for cached items
+     */
+    public static function enrichClientDetails(): void {
+        $pdo = db();
+        $missing = $pdo->query("
+            SELECT DISTINCT client_id 
+            FROM whmcs_items_cache 
+            WHERE client_id > 0 AND (client_name = '' OR client_name = 'Ambition Client' OR client_email = '')
+            LIMIT 25
+        ")->fetchAll(PDO::FETCH_COLUMN);
+
+        if (empty($missing)) return;
+
+        $upd = $pdo->prepare("
+            UPDATE whmcs_items_cache 
+            SET client_name = ?, client_email = ? 
+            WHERE client_id = ? AND (client_name = '' OR client_name = 'Ambition Client' OR client_email = '')
+        ");
+
+        foreach ($missing as $cid) {
+            $cRes = self::callWhmcs('GetClientsDetails', ['clientid' => (int)$cid]);
+            if (!empty($cRes['client'])) {
+                $cl = $cRes['client'];
+                $fullName = trim(($cl['firstname'] ?? '') . ' ' . ($cl['lastname'] ?? ''));
+                if (!empty($cl['companyname'])) {
+                    $fullName .= ' (' . $cl['companyname'] . ')';
+                }
+                $email = (string)($cl['email'] ?? '');
+                $upd->execute([$fullName ?: 'Ambition Client', $email, (int)$cid]);
+            }
+        }
+    }
+
+    /**
+     * Sync latest WHMCS Invoices into payment_records
+     */
+    public static function syncWhmcsInvoices(int $limit = 100): int {
+        $pdo = db();
+        $synced = 0;
+        try {
+            $res = self::callWhmcs('GetInvoices', [
+                'limitnum' => $limit,
+                'orderby' => 'id',
+                'order' => 'desc'
+            ]);
+
+            if (!empty($res['invoices']['invoice'])) {
+                $check = $pdo->prepare("SELECT id FROM payment_records WHERE whmcs_invoice_id = ? LIMIT 1");
+                $ins = $pdo->prepare("
+                    INSERT INTO payment_records (
+                        whmcs_invoice_id, customer_name, customer_email, amount,
+                        payment_source, whmcs_invoice_status, sanju_verified, service_delivered, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $upd = $pdo->prepare("
+                    UPDATE payment_records 
+                    SET customer_name = ?, customer_email = ?, amount = ?, whmcs_invoice_status = ?, sanju_verified = ?
+                    WHERE id = ?
+                ");
+
+                foreach ($res['invoices']['invoice'] as $inv) {
+                    $invId = (int)$inv['id'];
+                    $cName = trim(($inv['firstname'] ?? '') . ' ' . ($inv['lastname'] ?? ''));
+                    $cEmail = (string)($inv['email'] ?? '');
+                    $amt = (float)($inv['total'] ?? 0);
+                    $status = (string)($inv['status'] ?? 'Unpaid');
+                    $sanjuVer = ($status === 'Paid') ? 1 : 0;
+                    $date = !empty($inv['date']) ? $inv['date'] . ' 00:00:00' : date('Y-m-d H:i:s');
+                    $source = (!empty($inv['paymentmethod']) && stripos($inv['paymentmethod'], 'razor') !== false) ? 'Razorpay' : 'Bank_Transfer';
+
+                    $check->execute([$invId]);
+                    $existingId = $check->fetchColumn();
+
+                    if ($existingId) {
+                        $upd->execute([$cName, $cEmail, $amt, $status, $sanjuVer, $existingId]);
+                    } else {
+                        $ins->execute([$invId, $cName, $cEmail, $amt, $source, $status, $sanjuVer, 1, $date]);
+                    }
+                    $synced++;
+                }
+            }
+        } catch (Throwable $e) {
+            error_log("syncWhmcsInvoices error: " . $e->getMessage());
+        }
+        return $synced;
     }
 
     /**
