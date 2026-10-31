@@ -604,31 +604,49 @@ class AmbitionOrderBot {
                         $activatedAlerted++;
                     }
                 }
+
+                // ==========================================
+                // CASE 4: CANCELLED OR FRAUD IN WHMCS (STOP ESCALATION)
+                // ==========================================
+                elseif (in_array(strtolower($orderStatus), ['cancelled', 'fraud'], true)) {
+                    $updStatusStmt->execute([$orderStatus, $paymentStatus, 1, $cacheRecordId]);
+                }
             }
         }
 
-        // 3. Reconcile any locally cached 'Pending' orders not in raw list
+        // 3. Reconcile any locally cached 'Pending' orders not in WHMCS pending list
         foreach ($cachedOrders as $cid => $co) {
-            if ($co['order_status'] === 'Pending' && !isset($rawOrders[$cid])) {
-                try {
-                    $verify = AmbitionInfraSync::callWhmcs('GetOrders', ['id' => $cid]);
-                    if (!empty($verify['orders']['order'][0])) {
-                        $vo = $verify['orders']['order'][0];
-                        $newSt = (string)($vo['status'] ?? 'Active');
-                        if ($newSt !== 'Pending') {
-                            $updStatusStmt->execute([$newSt, 1, (int)$co['id']]);
-                            if ($newSt === 'Active' && (int)$co['is_active_notified'] === 0) {
-                                $tgMsg = "✅ <b>ORDER FULFILLED & ACTIVE!</b>\n"
-                                       . "━━━━━━━━━━━━━━━━━━━━━━\n"
-                                       . "🎉 <b>Order #{$cid} is now ACTIVE!</b>\n"
-                                       . "👤 <b>Customer:</b> " . htmlspecialchars($co['client_name']) . "\n"
-                                       . "✨ <i>Pending escalation reminders stopped.</i>";
-                                self::sendTelegramHtml($tgMsg);
-                                $activatedAlerted++;
+            if ($co['order_status'] === 'Pending') {
+                if (isset($rawOrders[$cid])) {
+                    $rawSt = (string)($rawOrders[$cid]['status'] ?? '');
+                    if (!empty($rawSt) && strcasecmp($rawSt, 'Pending') !== 0) {
+                        $rawPaySt = (strcasecmp((string)($rawOrders[$cid]['paymentstatus'] ?? ''), 'Unpaid') === 0) ? 'unpaid' : 'paid';
+                        $updStatusStmt->execute([$rawSt, $rawPaySt, 1, (int)$co['id']]);
+                        continue;
+                    }
+                } else {
+                    try {
+                        $verify = AmbitionInfraSync::callWhmcs('GetOrders', ['id' => $cid]);
+                        $vOrders = self::extractOrdersList($verify);
+                        if (!empty($vOrders[0])) {
+                            $vo = $vOrders[0];
+                            $newSt = (string)($vo['status'] ?? '');
+                            $newPaySt = (strcasecmp((string)($vo['paymentstatus'] ?? ''), 'Unpaid') === 0) ? 'unpaid' : 'paid';
+                            if (!empty($newSt) && strcasecmp($newSt, 'Pending') !== 0) {
+                                $updStatusStmt->execute([$newSt, $newPaySt, 1, (int)$co['id']]);
+                                if (strcasecmp($newSt, 'Active') === 0 && (int)$co['is_active_notified'] === 0) {
+                                    $tgMsg = "✅ <b>ORDER FULFILLED & ACTIVE!</b>\n"
+                                           . "━━━━━━━━━━━━━━━━━━━━━━\n"
+                                           . "🎉 <b>Order #{$cid} is now ACTIVE!</b>\n"
+                                           . "👤 <b>Customer:</b> " . htmlspecialchars($co['client_name']) . "\n"
+                                           . "✨ <i>Pending escalation reminders stopped.</i>";
+                                    self::sendTelegramHtml($tgMsg);
+                                    $activatedAlerted++;
+                                }
                             }
                         }
-                    }
-                } catch (Throwable $e) {}
+                    } catch (Throwable $e) {}
+                }
             }
         }
 
@@ -827,7 +845,7 @@ class AmbitionOrderBot {
         $pdo = db();
         $nowTs = time();
 
-        $stmt = $pdo->query("SELECT * FROM whmcs_orders_cache WHERE order_status = 'Pending' ORDER BY order_date DESC, id DESC");
+        $stmt = $pdo->query("SELECT * FROM whmcs_orders_cache WHERE order_status = 'Pending' AND order_status NOT IN ('Cancelled', 'Fraud', 'Active') ORDER BY order_date DESC, id DESC");
         $pendingOrders = $stmt->fetchAll();
 
         if (empty($pendingOrders)) {
