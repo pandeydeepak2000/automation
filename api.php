@@ -360,7 +360,7 @@ try {
             $allowedKeys = [
                 'active_llm_provider', 'telegram_bot_token', 'aarav_telegram_chat_id',
                 'order_bot_telegram_chat_id', 'order_bot_enabled', 'order_bot_pending_reminders',
-                'order_bot_reminder_interval_mins',
+                'order_bot_reminder_interval_mins', 'telegram_api_gateway',
                 'whmcs_url', 'whmcs_api_identifier', 'whmcs_api_secret',
                 'razorpay_key_id', 'razorpay_key_secret'
             ];

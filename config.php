@@ -225,12 +225,19 @@ function send_telegram_alert(string $message, string $customChatId = ''): bool {
     if (empty($token) || strpos($token, 'YOUR_') === 0 || empty($chatId) || strpos($chatId, 'YOUR_') === 0) {
         return false;
     }
-    $url = 'https://api.telegram.org/bot' . $token . '/sendMessage';
+    $apiBase = get_sys_setting('telegram_api_gateway', 'https://api.telegram.org');
+    if (empty($apiBase)) $apiBase = 'https://api.telegram.org';
+    $url = rtrim($apiBase, '/') . '/bot' . $token . '/sendMessage';
+
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 8,
+        CURLOPT_CONNECTTIMEOUT => 6,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
         CURLOPT_POSTFIELDS => http_build_query([
             'chat_id' => $chatId,
             'text' => "🚨 *AmbitionHost OS Alert*\n" . $message,

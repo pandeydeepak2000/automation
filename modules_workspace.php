@@ -308,6 +308,11 @@ if ($activeModId === 3):
             <option value="60" <?=$botStatus['reminder_interval_mins']==60?'selected':''?>>Every 1 Hour</option>
           </select>
         </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:4px">Telegram API Gateway (Optional)</label>
+          <input name="telegram_api_gateway" value="<?=htmlspecialchars(get_sys_setting('telegram_api_gateway', 'https://api.telegram.org'))?>" placeholder="https://api.telegram.org" style="width:100%">
+          <small style="color:#64748b;font-size:10px">Default: https://api.telegram.org (Only change if host blocks direct Telegram)</small>
+        </div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
         <button type="button" class="btn-dark" onclick="testTelegramBot()">📲 Send Test Telegram Ping</button>

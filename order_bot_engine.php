@@ -47,7 +47,7 @@ class AmbitionOrderBot {
     }
 
     /**
-     * Send Telegram message with safe HTML formatting
+     * Send Telegram message with safe HTML formatting and IPv4 force resolution
      */
     public static function sendTelegramHtml(string $htmlMessage, string $customChatId = '', string $customToken = ''): array {
         $token = !empty($customToken) ? $customToken : get_sys_setting('telegram_bot_token', defined('TELEGRAM_BOT_TOKEN') ? TELEGRAM_BOT_TOKEN : '');
@@ -60,7 +60,12 @@ class AmbitionOrderBot {
             return ['status' => 'error', 'message' => 'Telegram Chat ID configure nahi hai.'];
         }
 
-        $url = 'https://api.telegram.org/bot' . trim($token) . '/sendMessage';
+        // Custom API Gateway support (useful if webhost firewall blocks api.telegram.org)
+        $apiBase = get_sys_setting('telegram_api_gateway', 'https://api.telegram.org');
+        if (empty($apiBase)) $apiBase = 'https://api.telegram.org';
+        $apiBase = rtrim($apiBase, '/');
+
+        $url = $apiBase . '/bot' . trim($token) . '/sendMessage';
         $postData = [
             'chat_id' => trim($chatId),
             'text' => $htmlMessage,
@@ -68,20 +73,48 @@ class AmbitionOrderBot {
             'disable_web_page_preview' => false
         ];
 
+        // 1. Primary: cURL with IPv4 forced (Fixes Linux IPv6 timeout on cPanel)
+        $rawRes = false;
+        $curlErr = '';
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 10,
+            CURLOPT_CONNECTTIMEOUT => 6,
+            CURLOPT_TIMEOUT => 12,
+            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4, // CRITICAL: Prevents 10s IPv6 hang on CentOS/cPanel!
             CURLOPT_POSTFIELDS => http_build_query($postData),
-            CURLOPT_SSL_VERIFYPEER => true
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AmbitionHostBot/2.0'
         ]);
         $rawRes = curl_exec($ch);
         $curlErr = curl_error($ch);
         curl_close($ch);
 
+        // 2. Secondary Fallback: file_get_contents with stream context if cURL was blocked
         if ($rawRes === false) {
-            return ['status' => 'error', 'message' => 'cURL Error reaching Telegram: ' . $curlErr];
+            $opts = [
+                'http' => [
+                    'method'  => 'POST',
+                    'header'  => "Content-Type: application/x-www-form-urlencoded\r\nUser-Agent: Mozilla/5.0 AmbitionHostBot/2.0\r\n",
+                    'content' => http_build_query($postData),
+                    'timeout' => 8
+                ],
+                'ssl' => [
+                    'verify_peer' => false,
+                    'verify_peer_name' => false
+                ]
+            ];
+            $ctx = stream_context_create($opts);
+            $rawRes = @file_get_contents($url, false, $ctx);
+        }
+
+        if ($rawRes === false) {
+            return [
+                'status' => 'error',
+                'message' => 'Telegram connection timeout: ' . ($curlErr ?: 'Server firewall may be blocking outbound port 443 to api.telegram.org') . '. Tip: cPanel me Outbound Firewall (CSF) me port 443 allow karein ya Telegram Proxy Gateway use karein.'
+            ];
         }
 
         $decoded = json_decode((string)$rawRes, true);
