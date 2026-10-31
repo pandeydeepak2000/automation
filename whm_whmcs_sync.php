@@ -267,10 +267,10 @@ class AmbitionInfraSync {
     /**
      * WHMCS Read-Only API Caller (Uses WHMCS_API_IDENTIFIER & WHMCS_API_SECRET)
      */
-    public static function callWhmcs(string $action, array $params = []): array {
-        $ident = trim((string)get_sys_setting('whmcs_api_identifier', defined('WHMCS_API_IDENTIFIER') ? WHMCS_API_IDENTIFIER : ''));
-        $secret = trim((string)get_sys_setting('whmcs_api_secret', defined('WHMCS_API_SECRET') ? WHMCS_API_SECRET : ''));
-        $urlBase = trim((string)get_sys_setting('whmcs_url', defined('WHMCS_URL') ? WHMCS_URL : 'https://www.ambitionhost.in/user'));
+    public static function callWhmcs(string $action, array $params = [], string $customIdent = '', string $customSecret = '', string $customUrl = ''): array {
+        $ident = trim((string)($customIdent ?: get_sys_setting('whmcs_api_identifier', defined('WHMCS_API_IDENTIFIER') ? WHMCS_API_IDENTIFIER : '')));
+        $secret = trim((string)($customSecret ?: get_sys_setting('whmcs_api_secret', defined('WHMCS_API_SECRET') ? WHMCS_API_SECRET : '')));
+        $urlBase = trim((string)($customUrl ?: get_sys_setting('whmcs_url', defined('WHMCS_URL') ? WHMCS_URL : 'https://www.ambitionhost.in/user')));
 
         if (empty($ident) || strpos($ident, 'YOUR_') === 0) {
             return ['result' => 'error', 'message' => 'WHMCS Read-Only API Identifier not configured in settings or config.php'];
@@ -284,6 +284,12 @@ class AmbitionInfraSync {
             'responsetype' => 'json'
         ], $params);
 
+        // Fallback: If identifier is a staff username (e.g. controlos / admin), also pass username & password for legacy WHMCS auth
+        if (strlen($ident) <= 24 && strpos($ident, ' ') === false) {
+            $postData['username'] = $ident;
+            $postData['password'] = $secret;
+        }
+
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
@@ -293,7 +299,9 @@ class AmbitionInfraSync {
             CURLOPT_TIMEOUT => 20,
             CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
             CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AmbitionHostMasterOS/2.0',
+            CURLOPT_USERPWD => $ident . ':' . $secret
         ]);
 
         $res = curl_exec($ch);

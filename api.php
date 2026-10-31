@@ -423,12 +423,16 @@ try {
 
         case 'diagnose_whmcs_orders':
             if (!$isAdmin) throw new Exception('Admin only');
-            $diag = AmbitionOrderBot::diagnoseWhmcsOrders();
+            $customIdent = trim((string)($_POST['whmcs_api_identifier'] ?? ''));
+            $customSecret = trim((string)($_POST['whmcs_api_secret'] ?? ''));
+            $customUrl = trim((string)($_POST['whmcs_url'] ?? ''));
+
+            $diag = AmbitionOrderBot::diagnoseWhmcsOrders($customIdent, $customSecret, $customUrl);
             $serverIp = get_server_public_ip();
             $msg = "🔍 WHMCS Orders API Diagnostic:\n"
                  . "• Server Outbound IP: {$serverIp}\n"
                  . "• Target API: {$diag['target_url']}\n"
-                 . "• API Configured: " . ($diag['api_configured'] ? 'YES' : 'NO') . "\n"
+                 . "• API Identifier Tested: " . (!empty($customIdent) ? $customIdent : ($diag['api_identifier'] ?? 'Stored in DB')) . "\n"
                  . "• Pending Orders Detected: {$diag['pending_orders_found']}\n"
                  . "• Recent Orders Detected: {$diag['recent_orders_found']}\n"
                  . "• Specific Order #65067 Detected: {$diag['known_order_found']}\n";
@@ -437,8 +441,10 @@ try {
             }
             if (!empty($diag['api_issues'])) {
                 $hasBan = false;
+                $hasAuth = false;
                 foreach ($diag['api_issues'] as $iss) {
                     if (stripos($iss, 'IP Banned') !== false) $hasBan = true;
+                    if (stripos($iss, 'Authentication Failed') !== false) $hasAuth = true;
                 }
                 if ($hasBan) {
                     $msg .= "\n🚨 CRITICAL: WHMCS IP BANNED DETECTED!\n"
@@ -447,11 +453,18 @@ try {
                          . "1. Open: https://www.ambitionhost.in/user/devokedev/bannedips.php\n"
                          . "2. '{$serverIp}' ko Unban / Delete karein.\n"
                          . "3. General Settings ➔ Security ➔ 'API IP Access Restriction' me '{$serverIp}' ko add karein!";
+                } elseif ($hasAuth) {
+                    $msg .= "\n⚠️ AUTHENTICATION FAILED:\n"
+                         . "❌ Yeh Permission ki dikkat NAHI hai ('Get Orders' permission already active hai!).\n"
+                         . "❌ Asli Kaaran: WHMCS ko jo Identifier ya Secret bhej rahe hain, wo match nahi kar raha.\n\n"
+                         . "💡 SOLUTION:\n"
+                         . "1. Niche '🔑 WHMCS API Connection Keys' me jo Secret dala hai, use pehle '💾 Save Bot & WHMCS Configuration' button dabakar SAVE karein!\n"
+                         . "2. Agar fir bhi Authentication Failed aaye, toh WHMCS Admin ➔ System Settings ➔ API Credentials me '+ Generate New API Credential' par click karein aur fresh Identifier & Secret yahan daal kar Save karein!";
                 } else {
-                    $msg .= "\n⚠️ WHMCS ISSUES FOUND:\n" . implode("\n", $diag['api_issues']) . "\n\n👉 WHMCS Admin ➔ System Settings ➔ API Credentials ➔ Role Permissions me 'Get Orders' ko tick karein!";
+                    $msg .= "\n⚠️ WHMCS ISSUES FOUND:\n" . implode("\n", $diag['api_issues']);
                 }
             } else if ($diag['pending_orders_found'] > 0 || $diag['recent_orders_found'] > 0) {
-                $msg .= "\n✅ WHMCS API is successfully returning orders!";
+                $msg .= "\n✅ SUCCESS: WHMCS API Connected & Orders Successfully Retrieved!";
             }
             echo json_encode([
                 'status' => empty($diag['api_issues']) ? 'ok' : 'error',

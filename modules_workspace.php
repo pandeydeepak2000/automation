@@ -603,14 +603,16 @@ async function runOrderBotCheck() {
 }
 
 async function diagnoseWhmcsOrders() {
-  const fd = new FormData();
-  fd.append('action', 'diagnose_whmcs_orders');
+  const form = document.getElementById('orderBotSettingsForm');
+  const fd = form ? new FormData(form) : new FormData();
+  fd.set('action', 'diagnose_whmcs_orders');
   const btn = window.event ? window.event.target : null;
   const oldText = btn ? btn.textContent : '';
   if (btn) { btn.textContent = 'Diagnosing...'; btn.disabled = true; }
   try {
     const r = await postApi(fd);
     alert(r.message || JSON.stringify(r));
+    if (r.status === 'ok') location.reload();
   } finally {
     if (btn) { btn.textContent = oldText; btn.disabled = false; }
   }
@@ -631,7 +633,11 @@ async function saveOrderBotSettings(e) {
   const form = document.getElementById('orderBotSettingsForm');
   const r = await postApi(new FormData(form));
   if (r.status === 'ok') {
-    alert('✅ Telegram Order Bot Settings Saved Successfully!');
+    alert('✅ WHMCS Keys & Bot Settings Saved Successfully! Ab orders sync check ho raha hai...');
+    const fd = new FormData();
+    fd.append('action', 'run_order_bot_check');
+    const chk = await postApi(fd);
+    alert(chk.message || 'Check Complete');
     location.reload();
   } else {
     alert('Error saving settings: ' + (r.message || 'Failed'));

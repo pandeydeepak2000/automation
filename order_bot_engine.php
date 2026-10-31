@@ -221,13 +221,13 @@ class AmbitionOrderBot {
     /**
      * Diagnostic helper: Inspect WHMCS Orders API connectivity & raw output
      */
-    public static function diagnoseWhmcsOrders(): array {
-        $ident = get_sys_setting('whmcs_api_identifier', defined('WHMCS_API_IDENTIFIER') ? WHMCS_API_IDENTIFIER : '');
-        $urlBase = get_sys_setting('whmcs_url', defined('WHMCS_URL') ? WHMCS_URL : 'https://www.ambitionhost.in/user');
+    public static function diagnoseWhmcsOrders(string $customIdent = '', string $customSecret = '', string $customUrl = ''): array {
+        $ident = trim((string)($customIdent ?: get_sys_setting('whmcs_api_identifier', defined('WHMCS_API_IDENTIFIER') ? WHMCS_API_IDENTIFIER : '')));
+        $urlBase = trim((string)($customUrl ?: get_sys_setting('whmcs_url', defined('WHMCS_URL') ? WHMCS_URL : 'https://www.ambitionhost.in/user')));
 
-        $pRes = AmbitionInfraSync::callWhmcs('GetOrders', ['status' => 'Pending', 'limitnum' => 10]);
-        $rRes = AmbitionInfraSync::callWhmcs('GetOrders', ['limitnum' => 10]);
-        $sRes = AmbitionInfraSync::callWhmcs('GetOrders', ['id' => 65067]);
+        $pRes = AmbitionInfraSync::callWhmcs('GetOrders', ['status' => 'Pending', 'limitnum' => 10], $customIdent, $customSecret, $customUrl);
+        $rRes = AmbitionInfraSync::callWhmcs('GetOrders', ['limitnum' => 10], $customIdent, $customSecret, $customUrl);
+        $sRes = AmbitionInfraSync::callWhmcs('GetOrders', ['id' => 65067], $customIdent, $customSecret, $customUrl);
 
         $pList = self::extractOrdersList($pRes);
         $rList = self::extractOrdersList($rRes);
@@ -248,6 +248,7 @@ class AmbitionOrderBot {
 
         return [
             'api_configured' => (!empty($ident) && strpos($ident, 'YOUR_') !== 0),
+            'api_identifier' => $ident,
             'target_url' => rtrim($urlBase, '/') . '/includes/api.php',
             'pending_orders_found' => count($pList),
             'recent_orders_found' => count($rList),
