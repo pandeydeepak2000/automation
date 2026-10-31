@@ -122,7 +122,34 @@ class AmbitionOrderBot {
             return ['status' => 'ok', 'result' => $decoded['result']];
         }
 
+        // Auto-heal: If Telegram complains about invalid HTML entity/tag, strip tags and send immediately as plain text
         $desc = $decoded['description'] ?? 'Unknown Telegram API error';
+        if (stripos($desc, 'parse entities') !== false || stripos($desc, 'Unsupported start tag') !== false) {
+            $plainText = strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $htmlMessage));
+            $plainPost = [
+                'chat_id' => trim($chatId),
+                'text' => $plainText,
+                'disable_web_page_preview' => false
+            ];
+            $chRetry = curl_init($url);
+            curl_setopt_array($chRetry, [
+                CURLOPT_POST => true,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_TIMEOUT => 10,
+                CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+                CURLOPT_POSTFIELDS => http_build_query($plainPost),
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0
+            ]);
+            $rawRetry = curl_exec($chRetry);
+            curl_close($chRetry);
+            $decRetry = json_decode((string)$rawRetry, true);
+            if (!empty($decRetry['ok'])) {
+                return ['status' => 'ok', 'result' => $decRetry['result'], 'auto_healed' => true];
+            }
+        }
+
         return ['status' => 'error', 'message' => 'Telegram API Error: ' . $desc, 'raw' => $rawRes];
     }
 
@@ -134,7 +161,7 @@ class AmbitionOrderBot {
         $msg = "🤖 <b>AmbitionHost 24/7 Order Bot - Connection Test</b>\n"
              . "━━━━━━━━━━━━━━━━━━━━━━\n"
              . "✅ <b>Status:</b> Telegram Bot Connected Successfully!\n"
-             . "⚡ <b>Speed:</b> Instant (< 1s Latency)\n"
+             . "⚡ <b>Speed:</b> Instant (Under 1s Latency)\n"
              . "⏰ <b>Server Time:</b> {$now} (IST)\n"
              . "🛡 <b>Protected Queues:</b>\n"
              . "  • 🚀 Hosting Provisioning (Chandrika)\n"
