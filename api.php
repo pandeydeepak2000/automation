@@ -485,6 +485,12 @@ try {
             }
             break;
 
+        case 'alert_all_pending_orders':
+            if (!$isAdmin) throw new Exception('Admin only');
+            $allRes = AmbitionOrderBot::alertAllPendingOrders();
+            echo json_encode($allRes);
+            break;
+
         // 0-Second Instant Webhook Receiver from WHMCS Hook
         case 'whmcs_order_webhook':
             $whOrderId = (int)($_POST['order_id'] ?? ($_GET['order_id'] ?? 0));

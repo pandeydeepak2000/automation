@@ -409,9 +409,14 @@ if ($activeModId === 3):
 
   <!-- TAB 1: PENDING ORDERS WITH SLA BADGES & 1-CLICK TELEGRAM ESCALATION -->
   <div id="orderTabPending">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <h4 style="margin:0;font-size:14px;color:#334155">⚡ Active Pending Orders (SLA Auto-Escalation Active)</h4>
-      <small style="color:#64748b">जब तक ऑर्डर Active नहीं होगा, तब तक बॉट हर <?=$botStatus['reminder_interval_mins']?> मिनट पर रिमाइंडर भेजता रहेगा।</small>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <div>
+        <h4 style="margin:0;font-size:14px;color:#334155">⚡ Active Pending Orders (SLA Auto-Escalation Active)</h4>
+        <small style="color:#64748b">जब तक ऑर्डर Active नहीं होगा, तब तक बॉट हर <?=$botStatus['reminder_interval_mins']?> मिनट पर रिमाइंडर भेजता रहेगा।</small>
+      </div>
+      <?php if (count($pendingOrders) > 0): ?>
+        <button type="button" class="btn-primary" style="background:#dc2626;border-color:#dc2626;font-size:12px;padding:6px 12px" onclick="alertAllPendingOrders()">🚨 Alert All <?=count($pendingOrders)?> Pending Orders to Telegram</button>
+      <?php endif; ?>
     </div>
     <table>
       <thead>
@@ -626,6 +631,22 @@ async function sendManualOrderAlert(orderId) {
   const r = await postApi(fd);
   alert(r.message || (r.status === 'ok' ? 'Alert Sent!' : 'Error'));
   if (r.status === 'ok') location.reload();
+}
+
+async function alertAllPendingOrders() {
+  if (!confirm('Kya aap sabhi pending orders ka urgent SLA alert Telegram par bhejna chahte hain?')) return;
+  const btn = window.event ? window.event.target : null;
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Sending Alerts...'; btn.disabled = true; }
+  const fd = new FormData();
+  fd.append('action', 'alert_all_pending_orders');
+  try {
+    const r = await postApi(fd);
+    alert(r.message || (r.status === 'ok' ? 'Alerts Sent!' : 'Error'));
+    if (r.status === 'ok') location.reload();
+  } finally {
+    if (btn) { btn.textContent = oldText; btn.disabled = false; }
+  }
 }
 
 async function saveOrderBotSettings(e) {

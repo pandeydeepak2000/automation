@@ -124,6 +124,12 @@ class AmbitionOrderBot {
 
         // Auto-heal: If Telegram complains about invalid HTML entity/tag, strip tags and send immediately as plain text
         $desc = $decoded['description'] ?? 'Unknown Telegram API error';
+        if (stripos($desc, 'Too Many Requests') !== false) {
+            preg_match('/retry after (\d+)/i', $desc, $m);
+            $sec = $m[1] ?? '60';
+            return ['status' => 'error', 'message' => "Telegram Flood Protection: Telegram is cooling down. Please wait {$sec} seconds before sending alerts.", 'retry_after' => (int)$sec, 'raw' => $rawRes];
+        }
+
         if (stripos($desc, 'parse entities') !== false || stripos($desc, 'Unsupported start tag') !== false) {
             $plainText = strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $htmlMessage));
             $plainPost = [
@@ -464,10 +470,13 @@ class AmbitionOrderBot {
                         ]);
                 }
 
-                // Fire Instant Telegram Notification
-                if ($botEnabled === '1' || $manualTrigger) {
+                // Fire Instant Telegram Notification ONLY if order is Pending or placed recently (< 2 hours ago)
+                $orderAgeHours = ($nowTs - strtotime($orderDate)) / 3600;
+                $shouldSendAlert = ($orderStatus === 'Pending' || $orderAgeHours <= 2);
+
+                if (($botEnabled === '1' || $manualTrigger) && $shouldSendAlert) {
                     $badge = ($orderStatus === 'Pending') ? "⚠️ <b>PENDING PROVISIONING</b>" : "✅ <b>ACTIVE</b>";
-                    $tgMsg = "🛒 <b>NEW WHMCS ORDER RECEIVED!</b>\n"
+                    $tgMsg = ($orderStatus === 'Pending' ? "🚨 <b>NEW PENDING ORDER RECEIVED!</b>\n" : "🛒 <b>NEW WHMCS ORDER RECEIVED!</b>\n")
                            . "━━━━━━━━━━━━━━━━━━━━━━\n"
                            . "📦 <b>Order ID:</b> <code>#{$orderId}</code> (Num: {$orderNum})\n"
                            . "👤 <b>Customer:</b> " . htmlspecialchars($clientName) . " (Client #{$clientId})\n"
@@ -486,6 +495,7 @@ class AmbitionOrderBot {
 
                     self::sendTelegramHtml($tgMsg);
                     $newOrdersAlerted++;
+                    usleep(350000); // 350ms delay to prevent Telegram 429 flood control
                 }
 
                 $cachedOrders[$orderId] = [
@@ -532,6 +542,7 @@ class AmbitionOrderBot {
 
                         self::sendTelegramHtml($tgMsg);
                         $pendingAlerted++;
+                        usleep(350000); // 350ms delay to prevent Telegram 429
                     }
                 }
 
@@ -726,6 +737,40 @@ class AmbitionOrderBot {
             ->execute([(int)$ord['id']]);
 
         return self::sendTelegramHtml($msg);
+    }
+
+    /**
+     * Alert ALL currently pending orders to Telegram with flood-control throttling
+     */
+    public static function alertAllPendingOrders(): array {
+        self::ensureOrdersSchema();
+        $pdo = db();
+        $pending = $pdo->query("SELECT * FROM whmcs_orders_cache WHERE order_status = 'Pending' ORDER BY order_date DESC")->fetchAll();
+
+        if (empty($pending)) {
+            return ['status' => 'ok', 'count' => 0, 'message' => 'No pending orders found to alert.'];
+        }
+
+        $sent = 0;
+        $failed = 0;
+        $lastErr = '';
+
+        foreach ($pending as $ord) {
+            $orderId = (int)$ord['order_id'];
+            $res = self::sendManualEscalation($orderId);
+            if ($res['status'] === 'ok') {
+                $sent++;
+            } else {
+                $failed++;
+                $lastErr = $res['message'] ?? 'Failed';
+            }
+            usleep(500000); // 500ms throttle between orders to respect Telegram limit
+        }
+
+        if ($sent > 0) {
+            return ['status' => 'ok', 'count' => $sent, 'message' => "🚨 Success! {$sent} Pending Order Alerts dispatched to Telegram!"];
+        }
+        return ['status' => 'error', 'message' => "Failed to send alerts: " . $lastErr];
     }
 
     /**
