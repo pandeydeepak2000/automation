@@ -225,6 +225,39 @@ class AmbitionOrderBot {
     }
 
     /**
+     * Convert minutes into user-friendly readable format: "5 Hours 35 Mins" or "5h 35m"
+     */
+    public static function formatDuration(int $totalMins, bool $compact = false): string {
+        if ($totalMins <= 0) return $compact ? '1m' : '1 Min';
+        if ($totalMins < 60) return $compact ? "{$totalMins}m" : "{$totalMins} Mins";
+
+        $days = (int)floor($totalMins / 1440);
+        $rem = $totalMins % 1440;
+        $hours = (int)floor($rem / 60);
+        $mins = $rem % 60;
+
+        if ($compact) {
+            if ($days > 0) return "{$days}d {$hours}h" . ($mins > 0 ? " {$mins}m" : "");
+            return "{$hours}h" . ($mins > 0 ? " {$mins}m" : "");
+        }
+
+        $parts = [];
+        if ($days > 0) {
+            $parts[] = "{$days} " . ($days === 1 ? 'Day' : 'Days');
+        }
+        if ($hours > 0) {
+            $parts[] = "{$hours} " . ($hours === 1 ? 'Hour' : 'Hours');
+        }
+        if ($mins > 0 && $days === 0) {
+            $parts[] = "{$mins} " . ($mins === 1 ? 'Min' : 'Mins');
+        } elseif ($mins > 0 && $days > 0 && $hours === 0) {
+            $parts[] = "{$mins} Mins";
+        }
+
+        return !empty($parts) ? implode(' ', $parts) : "{$totalMins} Mins";
+    }
+
+    /**
      * Diagnostic helper: Inspect WHMCS Orders API connectivity & raw output
      */
     public static function diagnoseWhmcsOrders(string $customIdent = '', string $customSecret = '', string $customUrl = ''): array {
@@ -517,9 +550,11 @@ class AmbitionOrderBot {
                 $cacheRecordId = (int)$cached['id'];
 
                 if ($orderStatus === 'Pending') {
-                    $firstTs = strtotime((string)$cached['first_detected_at']);
+                    $orderCreatedTs = !empty($o['date']) ? strtotime((string)$o['date']) : (!empty($cached['order_date']) ? strtotime((string)$cached['order_date']) : strtotime((string)$cached['first_detected_at']));
                     $lastAlertTs = strtotime((string)$cached['last_alerted_at']);
-                    $elapsedMins = (int)floor(($nowTs - $firstTs) / 60);
+                    $elapsedMins = (int)floor(($nowTs - $orderCreatedTs) / 60);
+                    if ($elapsedMins < 1) $elapsedMins = 1;
+                    $durationFormatted = self::formatDuration($elapsedMins);
                     $minsSinceLastAlert = (int)floor(($nowTs - $lastAlertTs) / 60);
 
                     if (($remindersEnabled === '1' && $minsSinceLastAlert >= $repeatIntervalMins) || $manualTrigger) {
@@ -528,7 +563,7 @@ class AmbitionOrderBot {
                         $alertCountNext = (int)$cached['alert_count'] + 1;
                         $tgMsg = "⚠️ <b>PENDING ORDER ESCALATION ALERT (#{$alertCountNext})</b>\n"
                                . "━━━━━━━━━━━━━━━━━━━━━━\n"
-                               . "⏳ <b>Order #{$orderId} is still PENDING for {$elapsedMins} minutes!</b>\n"
+                               . "⏳ <b>Order #{$orderId} is still PENDING for {$durationFormatted}!</b>\n"
                                . "👤 <b>Customer:</b> " . htmlspecialchars($clientName) . " (Client #{$clientId})\n"
                                . "💰 <b>Amount:</b> ₹" . number_format($amount, 2) . "\n"
                                . "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -717,13 +752,15 @@ class AmbitionOrderBot {
         }
 
         $nowTs = time();
-        $firstTs = strtotime((string)$ord['first_detected_at']);
-        $elapsedMins = (int)floor(($nowTs - $firstTs) / 60);
+        $orderTs = !empty($ord['order_date']) ? strtotime((string)$ord['order_date']) : strtotime((string)$ord['first_detected_at']);
+        $elapsedMins = (int)floor(($nowTs - $orderTs) / 60);
+        if ($elapsedMins < 1) $elapsedMins = 1;
+        $durationFormatted = self::formatDuration($elapsedMins);
         $orderLink = whmcs_deep_link('order', $orderId);
 
         $msg = "🚨 <b>MANUAL URGENT ESCALATION FROM MASTER OS</b>\n"
              . "━━━━━━━━━━━━━━━━━━━━━━\n"
-             . "⏳ <b>Order #{$orderId} is PENDING for {$elapsedMins} mins!</b>\n"
+             . "⏳ <b>Order #{$orderId} is PENDING for {$durationFormatted}!</b>\n"
              . "👤 <b>Customer:</b> " . htmlspecialchars($ord['client_name']) . " (Client #{$ord['client_id']})\n"
              . "💰 <b>Amount:</b> ₹" . number_format((float)$ord['amount'], 2) . "\n"
              . "━━━━━━━━━━━━━━━━━━━━━━\n"

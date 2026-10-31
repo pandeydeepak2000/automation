@@ -439,12 +439,13 @@ if ($activeModId === 3):
           </tr>
         <?php else: foreach ($pendingOrders as $po):
           $pendingMins = (int)floor((time() - strtotime((string)$po['order_date'])) / 60);
+          $badgeDuration = AmbitionOrderBot::formatDuration($pendingMins, true);
           if ($pendingMins < 15) {
-              $slaBadge = "<span class='pill pill-green'>⏳ {$pendingMins}m Pending</span>";
+              $slaBadge = "<span class='pill pill-green'>⏳ {$badgeDuration} Pending</span>";
           } elseif ($pendingMins < 30) {
-              $slaBadge = "<span class='pill' style='background:#fef3c7;color:#92400e'>⚠️ {$pendingMins}m (SLA Warning)</span>";
+              $slaBadge = "<span class='pill' style='background:#fef3c7;color:#92400e'>⚠️ {$badgeDuration} (SLA Warning)</span>";
           } else {
-              $slaBadge = "<span class='pill pill-red'>🚨 {$pendingMins}m OVERDUE SLA!</span>";
+              $slaBadge = "<span class='pill pill-red'>🚨 {$badgeDuration} OVERDUE SLA!</span>";
           }
         ?>
           <tr>
