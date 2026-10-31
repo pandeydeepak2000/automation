@@ -405,6 +405,30 @@ try {
             }
             break;
 
+        case 'diagnose_whmcs_orders':
+            if (!$isAdmin) throw new Exception('Admin only');
+            $diag = AmbitionOrderBot::diagnoseWhmcsOrders();
+            $msg = "🔍 WHMCS Orders API Diagnostic:\n"
+                 . "• Target API: {$diag['target_url']}\n"
+                 . "• API Configured: " . ($diag['api_configured'] ? 'YES' : 'NO') . "\n"
+                 . "• Pending Orders Detected: {$diag['pending_orders_found']}\n"
+                 . "• Recent Orders Detected: {$diag['recent_orders_found']}\n"
+                 . "• Specific Order #65067 Detected: {$diag['known_order_found']}\n";
+            if (!empty($diag['detected_order_ids'])) {
+                $msg .= "• Detected IDs: " . json_encode($diag['detected_order_ids'], JSON_UNESCAPED_UNICODE) . "\n";
+            }
+            if (!empty($diag['api_issues'])) {
+                $msg .= "\n⚠️ WHMCS ISSUES FOUND:\n" . implode("\n", $diag['api_issues']) . "\n\n👉 WHMCS Admin ➔ System Settings ➔ API Credentials ➔ Role Permissions me 'Get Orders' ko tick karein!";
+            } else if ($diag['pending_orders_found'] > 0 || $diag['recent_orders_found'] > 0) {
+                $msg .= "\n✅ WHMCS API is successfully returning orders!";
+            }
+            echo json_encode([
+                'status' => empty($diag['api_issues']) ? 'ok' : 'error',
+                'message' => $msg,
+                'data' => $diag
+            ]);
+            break;
+
         // Telegram 24/7 Order Bot: 1-Click Manual Escalation
         case 'send_manual_order_alert':
             $targetOrderId = (int)($_POST['order_id'] ?? 0);

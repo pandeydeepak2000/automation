@@ -149,23 +149,87 @@ class AmbitionOrderBot {
     /**
      * Robust extractor for WHMCS API orders response across all WHMCS versions
      */
-    public static function extractOrdersList(array $res): array {
-        if (empty($res)) return [];
+    public static function extractOrdersList($res): array {
+        if (empty($res) || !is_array($res)) return [];
+
+        // Direct single order
+        if (!empty($res['id']) && (!empty($res['ordernum']) || !empty($res['status']))) {
+            return [$res];
+        }
+
         // Shape 1: $res['orders']['order']
         if (!empty($res['orders']['order'])) {
             $items = $res['orders']['order'];
             return isset($items[0]) ? $items : [$items];
         }
-        // Shape 2: $res['orders'] directly
+
+        // Shape 2: $res['orders'] as array/list/hashmap
         if (!empty($res['orders']) && is_array($res['orders'])) {
-            if (isset($res['orders'][0])) return $res['orders'];
+            $list = [];
+            foreach ($res['orders'] as $k => $val) {
+                if (is_array($val) && (!empty($val['id']) || !empty($val['ordernum']) || !empty($val['status']))) {
+                    $list[] = $val;
+                }
+            }
+            if (!empty($list)) return $list;
+
             if (!empty($res['orders']['id'])) return [$res['orders']];
         }
+
         // Shape 3: $res['order']
         if (!empty($res['order']) && is_array($res['order'])) {
-            return isset($res['order'][0]) ? $res['order'] : [$res['order']];
+            if (isset($res['order'][0])) return $res['order'];
+            if (!empty($res['order']['id'])) return [$res['order']];
         }
+
+        // Shape 4: $res['data']
+        if (!empty($res['data']) && is_array($res['data'])) {
+            $sub = self::extractOrdersList($res['data']);
+            if (!empty($sub)) return $sub;
+        }
+
         return [];
+    }
+
+    /**
+     * Diagnostic helper: Inspect WHMCS Orders API connectivity & raw output
+     */
+    public static function diagnoseWhmcsOrders(): array {
+        $ident = get_sys_setting('whmcs_api_identifier', defined('WHMCS_API_IDENTIFIER') ? WHMCS_API_IDENTIFIER : '');
+        $urlBase = get_sys_setting('whmcs_url', defined('WHMCS_URL') ? WHMCS_URL : 'https://www.ambitionhost.in/user');
+
+        $pRes = AmbitionInfraSync::callWhmcs('GetOrders', ['status' => 'Pending', 'limitnum' => 10]);
+        $rRes = AmbitionInfraSync::callWhmcs('GetOrders', ['limitnum' => 10]);
+        $sRes = AmbitionInfraSync::callWhmcs('GetOrders', ['id' => 65067]);
+
+        $pList = self::extractOrdersList($pRes);
+        $rList = self::extractOrdersList($rRes);
+        $sList = self::extractOrdersList($sRes);
+
+        $detectedIds = [];
+        foreach (array_merge($pList, $rList, $sList) as $o) {
+            if (!empty($o['id'])) $detectedIds[(int)$o['id']] = ($o['ordernum'] ?? '') . ' (' . ($o['status'] ?? '') . ' - ₹' . ($o['amount'] ?? '') . ')';
+        }
+
+        $issues = [];
+        if (($pRes['result'] ?? '') === 'error') {
+            $issues[] = "WHMCS Pending Query Error: " . ($pRes['message'] ?? 'Unknown error');
+        }
+        if (($rRes['result'] ?? '') === 'error') {
+            $issues[] = "WHMCS Recent Query Error: " . ($rRes['message'] ?? 'Unknown error');
+        }
+
+        return [
+            'api_configured' => (!empty($ident) && strpos($ident, 'YOUR_') !== 0),
+            'target_url' => rtrim($urlBase, '/') . '/includes/api.php',
+            'pending_orders_found' => count($pList),
+            'recent_orders_found' => count($rList),
+            'known_order_found' => count($sList),
+            'detected_order_ids' => $detectedIds,
+            'api_issues' => $issues,
+            'pending_raw_sample' => $pRes,
+            'recent_raw_sample' => $rRes
+        ];
     }
 
     /**
@@ -194,7 +258,19 @@ class AmbitionOrderBot {
             if (!empty($o['id'])) $rawOrders[(int)$o['id']] = $o;
         }
 
-        // 2. Also fetch all recent orders (limitnum = 100) and pick any that are Pending
+        // 2. Also try status = 'pending' (lowercase)
+        if (empty($rawOrders)) {
+            $pendingRes2 = AmbitionInfraSync::callWhmcs('GetOrders', [
+                'status'   => 'pending',
+                'limitnum' => 50
+            ]);
+            $pOrders2 = self::extractOrdersList($pendingRes2);
+            foreach ($pOrders2 as $o) {
+                if (!empty($o['id'])) $rawOrders[(int)$o['id']] = $o;
+            }
+        }
+
+        // 3. Also fetch all recent orders (limitnum = 100) and pick any that are Pending
         $recentRes = AmbitionInfraSync::callWhmcs('GetOrders', [
             'limitnum' => 100
         ]);
@@ -207,7 +283,7 @@ class AmbitionOrderBot {
             }
         }
 
-        // 3. Fallback: If rawOrders is empty, try query for known live order IDs (65067, 65065)
+        // 4. Fallback: If rawOrders is empty, try query for known live order IDs (65067, 65065)
         if (empty($rawOrders)) {
             foreach ([65067, 65065] as $knownId) {
                 $singleRes = AmbitionInfraSync::callWhmcs('GetOrders', ['id' => $knownId]);

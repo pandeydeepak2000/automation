@@ -255,6 +255,7 @@ if ($activeModId === 3):
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="btn-primary" style="background:#059669;border-color:#059669" onclick="runOrderBotCheck()">🔄 Check & Sync Orders Now</button>
+      <button type="button" class="btn-dark" style="background:#0284c7;color:#fff;border-color:#0284c7" onclick="diagnoseWhmcsOrders()">🔍 Test WHMCS Orders API</button>
       <button type="button" class="btn-primary" style="background:#2563eb;border-color:#2563eb" onclick="testTelegramBot()">📲 Test Telegram Bot</button>
       <?php if ($isAdmin): ?>
         <button type="button" class="btn-dark" style="background:#0f172a;color:#38bdf8" onclick="toggleElement('orderBotSettingsPanel')">⚙️ Bot Settings</button>
@@ -562,6 +563,20 @@ async function runOrderBotCheck() {
     const r = await postApi(fd);
     alert(r.message || 'Check Complete');
     location.reload();
+  } finally {
+    if (btn) { btn.textContent = oldText; btn.disabled = false; }
+  }
+}
+
+async function diagnoseWhmcsOrders() {
+  const fd = new FormData();
+  fd.append('action', 'diagnose_whmcs_orders');
+  const btn = window.event ? window.event.target : null;
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Diagnosing...'; btn.disabled = true; }
+  try {
+    const r = await postApi(fd);
+    alert(r.message || JSON.stringify(r));
   } finally {
     if (btn) { btn.textContent = oldText; btn.disabled = false; }
   }
