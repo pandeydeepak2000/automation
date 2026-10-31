@@ -303,3 +303,37 @@ CREATE TABLE IF NOT EXISTS `whmcs_daily_snapshots` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `snapshot_date` (`snapshot_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 13. WHMCS 24/7 Order Watchdog & Escalation Bot Cache
+CREATE TABLE IF NOT EXISTS `whmcs_orders_cache` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `order_id` int(11) NOT NULL,
+  `order_num` varchar(50) DEFAULT '',
+  `client_id` int(11) NOT NULL DEFAULT 0,
+  `client_name` varchar(150) NOT NULL DEFAULT '',
+  `client_email` varchar(150) NOT NULL DEFAULT '',
+  `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `payment_method` varchar(50) DEFAULT 'Online',
+  `invoice_id` int(11) DEFAULT 0,
+  `order_status` varchar(50) NOT NULL DEFAULT 'Pending',
+  `order_date` datetime DEFAULT NULL,
+  `has_hosting` tinyint(1) NOT NULL DEFAULT 0,
+  `has_domain` tinyint(1) NOT NULL DEFAULT 0,
+  `lineitems_summary` text DEFAULT NULL,
+  `first_detected_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `last_alerted_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `alert_count` int(11) NOT NULL DEFAULT 1,
+  `is_active_notified` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `order_id` (`order_id`),
+  KEY `order_status` (`order_status`),
+  KEY `client_id` (`client_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO `system_settings` (`setting_key`, `setting_value`) VALUES
+('order_bot_enabled', '1'),
+('order_bot_pending_reminders', '1'),
+('order_bot_reminder_interval_mins', '15')
+ON DUPLICATE KEY UPDATE `setting_value`=VALUES(`setting_value`);

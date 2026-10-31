@@ -89,4 +89,13 @@ if ($currentHour >= 10) {
     }
 }
 
-echo json_encode(['status' => 'cron_ok', 'time' => date('Y-m-d H:i:s')]);
+// 4. 24/7 WHMCS Order Watchdog & Pending Escalation Bot
+require_once __DIR__ . '/order_bot_engine.php';
+$orderBotReport = [];
+try {
+    $orderBotReport = AmbitionOrderBot::syncAndCheckOrders(false);
+} catch (Throwable $e) {
+    $orderBotReport = ['status' => 'error', 'message' => $e->getMessage()];
+}
+
+echo json_encode(['status' => 'cron_ok', 'time' => date('Y-m-d H:i:s'), 'order_bot' => $orderBotReport]);

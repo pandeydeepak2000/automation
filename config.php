@@ -120,6 +120,32 @@ function db(): PDO {
                   KEY `client_id` (`client_id`),
                   KEY `domain` (`domain`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                CREATE TABLE IF NOT EXISTS `whmcs_orders_cache` (
+                  `id` int(11) NOT NULL AUTO_INCREMENT,
+                  `order_id` int(11) NOT NULL,
+                  `order_num` varchar(50) DEFAULT '',
+                  `client_id` int(11) NOT NULL DEFAULT 0,
+                  `client_name` varchar(150) NOT NULL DEFAULT '',
+                  `client_email` varchar(150) NOT NULL DEFAULT '',
+                  `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+                  `payment_method` varchar(50) DEFAULT 'Online',
+                  `invoice_id` int(11) DEFAULT 0,
+                  `order_status` varchar(50) NOT NULL DEFAULT 'Pending',
+                  `order_date` datetime DEFAULT NULL,
+                  `has_hosting` tinyint(1) NOT NULL DEFAULT 0,
+                  `has_domain` tinyint(1) NOT NULL DEFAULT 0,
+                  `lineitems_summary` text DEFAULT NULL,
+                  `first_detected_at` datetime DEFAULT CURRENT_TIMESTAMP,
+                  `last_alerted_at` datetime DEFAULT CURRENT_TIMESTAMP,
+                  `alert_count` int(11) NOT NULL DEFAULT 1,
+                  `is_active_notified` tinyint(1) NOT NULL DEFAULT 0,
+                  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+                  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  PRIMARY KEY (`id`),
+                  UNIQUE KEY `order_id` (`order_id`),
+                  KEY `order_status` (`order_status`),
+                  KEY `client_id` (`client_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             ");
         } catch (Throwable $e) {}
 
@@ -192,11 +218,11 @@ function calc_working_minutes(int $startTs, int $endTs): int {
     return $totalMinutes;
 }
 
-// Helper: Send Instant Telegram Alert to Aarav
-function send_telegram_alert(string $message): bool {
+// Helper: Send Instant Telegram Alert to Aarav / Order Bot
+function send_telegram_alert(string $message, string $customChatId = ''): bool {
     $token = get_sys_setting('telegram_bot_token', TELEGRAM_BOT_TOKEN);
-    $chatId = get_sys_setting('aarav_telegram_chat_id', AARAV_TELEGRAM_CHAT_ID);
-    if (empty($token) || strpos($token, 'YOUR_') === 0) {
+    $chatId = !empty($customChatId) ? $customChatId : get_sys_setting('order_bot_telegram_chat_id', get_sys_setting('aarav_telegram_chat_id', AARAV_TELEGRAM_CHAT_ID));
+    if (empty($token) || strpos($token, 'YOUR_') === 0 || empty($chatId) || strpos($chatId, 'YOUR_') === 0) {
         return false;
     }
     $url = 'https://api.telegram.org/bot' . $token . '/sendMessage';

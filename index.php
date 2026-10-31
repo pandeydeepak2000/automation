@@ -454,15 +454,20 @@ dialog{border:1px solid #cbd5e1;border-radius:14px;padding:22px;max-width:680px;
                     <input type="password" name="api_key_claude" value="<?=htmlspecialchars(get_sys_setting('api_key_claude',''))?>" placeholder="sk-ant-...">
                   </div>
                   <div>
-                    <label style="font-size:12px;color:#64748b;font-weight:700">Telegram Bot Token (Alerts)</label>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">Telegram Bot Token (Orders & SLA Alerts)</label>
                     <input type="password" name="telegram_bot_token" value="<?=htmlspecialchars(get_sys_setting('telegram_bot_token',''))?>" placeholder="bot123456:ABC-DEF...">
                   </div>
                   <div>
-                    <label style="font-size:12px;color:#64748b;font-weight:700">Aarav Telegram Chat ID</label>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">Aarav Personal Chat ID</label>
                     <input name="aarav_telegram_chat_id" value="<?=htmlspecialchars(get_sys_setting('aarav_telegram_chat_id',''))?>" placeholder="123456789">
                   </div>
+                  <div>
+                    <label style="font-size:12px;color:#64748b;font-weight:700">Order Alerts Telegram Chat / Group ID</label>
+                    <input name="order_bot_telegram_chat_id" value="<?=htmlspecialchars(get_sys_setting('order_bot_telegram_chat_id', get_sys_setting('aarav_telegram_chat_id','')) )?>" placeholder="-100123456789 or personal ID">
+                  </div>
                 </div>
-                <div style="margin-top:14px;text-align:right">
+                <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px">
+                  <button type="button" class="btn-dark" onclick="testTelegramBot()">📲 Test Telegram Connection</button>
                   <button type="submit" class="btn-primary" style="background:#7c3aed;border-color:#7c3aed">💾 Save AI & Telegram Keys</button>
                 </div>
               </form>
@@ -668,6 +673,20 @@ async function testWhmcsConn() {
   const r = await postApi(fd);
   if (btn) { btn.textContent = oldText; btn.disabled = false; }
   alert(r.message || 'WHMCS Connection Test Completed');
+}
+
+async function testTelegramBot() {
+  const fd = new FormData();
+  fd.append('action', 'test_telegram_bot');
+  const btn = window.event ? window.event.target : null;
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Sending...'; btn.disabled = true; }
+  try {
+    const r = await postApi(fd);
+    alert(r.message || (r.status === 'ok' ? '✅ Telegram Test Sent!' : 'Error'));
+  } finally {
+    if (btn) { btn.textContent = oldText; btn.disabled = false; }
+  }
 }
 
 async function syncWhmcsCache() {

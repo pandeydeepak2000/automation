@@ -214,64 +214,372 @@ if ($activeModId === 2):
 // MODULE 03: ORDERS & DELIVERY QUEUE (PAID BUT UNDELIVERED PROTECTION)
 // ==========================================
 if ($activeModId === 3):
+  require_once __DIR__ . '/order_bot_engine.php';
+  AmbitionOrderBot::ensureOrdersSchema();
+  $botStatus = AmbitionOrderBot::getBotStatus();
+
+  // If local orders cache is empty, trigger an initial check silently
+  if ($botStatus['total_orders'] === 0) {
+      try {
+          AmbitionOrderBot::syncAndCheckOrders(false);
+          $botStatus = AmbitionOrderBot::getBotStatus();
+      } catch (Throwable $e) {}
+  }
+
+  $pendingOrders = $pdo->query("SELECT * FROM whmcs_orders_cache WHERE order_status = 'Pending' ORDER BY order_date DESC LIMIT 50")->fetchAll();
+  $recentOrders  = $pdo->query("SELECT * FROM whmcs_orders_cache ORDER BY id DESC LIMIT 50")->fetchAll();
+  $paymentRows   = $pdo->query("SELECT * FROM payment_records WHERE service_delivered = 0 ORDER BY id DESC LIMIT 25")->fetchAll();
+
+  $pendingHostingCount = (int)$pdo->query("SELECT COUNT(*) FROM whmcs_orders_cache WHERE order_status = 'Pending' AND has_hosting = 1")->fetchColumn();
+  $pendingDomainCount  = (int)$pdo->query("SELECT COUNT(*) FROM whmcs_orders_cache WHERE order_status = 'Pending' AND has_domain = 1")->fetchColumn();
 ?>
 <div class="box" style="border-left:4px solid #059669">
+  <!-- HEADER & CONTROLS -->
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
     <div>
-      <h3 style="margin:0;font-size:18px">📦 Module 03: Orders & Delivery Queue (Zero-Drop Guarantee)</h3>
-      <small style="color:#64748b">Payment आने के बाद Hosting (Chandrika) और Domain (Priya/Sanju) की पक्की डिलीवरी।</small>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h3 style="margin:0;font-size:18px">📦 Module 03: WHMCS Orders & 24×7 Telegram Watchdog</h3>
+        <?php if ($botStatus['is_configured']): ?>
+          <span class="pill pill-green">🟢 Telegram Order Bot Active</span>
+        <?php else: ?>
+          <span class="pill pill-red">⚠️ Telegram Bot Token Needed</span>
+        <?php endif; ?>
+        <?php if ($botStatus['reminders_enabled']): ?>
+          <span class="pill pill-blue">⏱ Repeating Alert: Every <?=$botStatus['reminder_interval_mins']?>m until Active</span>
+        <?php endif; ?>
+      </div>
+      <small style="color:#64748b;display:block;margin-top:2px">
+        WHMCS में जैसे ही नया ऑर्डर आए, Telegram पर 0-सेकंड नोटिफिकेशन + Hosting & Domain जब तक Active न हो जाए, लगातार SLA अलर्ट!
+      </small>
     </div>
-    <div class="toolbar" style="margin:0">
-      <a class="btn-dark" href="<?=htmlspecialchars(whmcs_deep_link('pending_orders'))?>" target="_blank">WHMCS Pending Orders ↗</a>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn-primary" style="background:#059669;border-color:#059669" onclick="runOrderBotCheck()">🔄 Check & Sync Orders Now</button>
+      <button type="button" class="btn-primary" style="background:#2563eb;border-color:#2563eb" onclick="testTelegramBot()">📲 Test Telegram Bot</button>
+      <?php if ($isAdmin): ?>
+        <button type="button" class="btn-dark" onclick="toggleElement('orderBotSettingsPanel')">⚙️ Bot Settings</button>
+      <?php endif; ?>
+      <button type="button" class="btn-dark" style="background:#7c3aed;color:#fff;border-color:#7c3aed" onclick="toggleElement('whmcsHookGuidePanel')">⚡ 0-Second Hook</button>
+      <a class="btn-dark" href="<?=htmlspecialchars(whmcs_deep_link('pending_orders'))?>" target="_blank">WHMCS Orders ↗</a>
     </div>
   </div>
 
+  <!-- ADMIN BOT CONFIGURATION PANEL (COLLAPSIBLE) -->
+  <div id="orderBotSettingsPanel" style="display:none;margin-top:16px;background:#f8fafc;padding:16px;border-radius:10px;border:1px solid #cbd5e1">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <strong style="color:#0f172a;font-size:15px">⚙️ 24×7 Telegram Order Bot & Escalation Settings (Admin Only)</strong>
+      <button type="button" onclick="toggleElement('orderBotSettingsPanel')" style="padding:2px 8px;font-size:12px">✕ Close</button>
+    </div>
+    <form id="orderBotSettingsForm" onsubmit="saveOrderBotSettings(event)">
+      <input type="hidden" name="action" value="save_system_settings">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:4px">Telegram Bot Token (From @BotFather)</label>
+          <input type="password" name="telegram_bot_token" value="<?=htmlspecialchars(get_sys_setting('telegram_bot_token',''))?>" placeholder="123456789:ABCdefGhIJKlmNoPQ..." style="width:100%" required>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:4px">Telegram Chat ID / Group ID (Where Orders will alert)</label>
+          <input name="order_bot_telegram_chat_id" value="<?=htmlspecialchars(get_sys_setting('order_bot_telegram_chat_id', get_sys_setting('aarav_telegram_chat_id','')) )?>" placeholder="-100123456789 or 12345678" style="width:100%" required>
+          <small style="color:#64748b;font-size:10px">Aarav personal chat ID ya Team Telegram group ID dalein</small>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:4px">24/7 Watchdog Bot Status</label>
+          <select name="order_bot_enabled" style="width:100%">
+            <option value="1" <?=$botStatus['is_enabled']?'selected':''?>>🟢 Active (Auto-Alert on Every Order)</option>
+            <option value="0" <?=!$botStatus['is_enabled']?'selected':''?>>⚪ Paused (Disabled)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:4px">Pending Order Continuous Reminders</label>
+          <select name="order_bot_pending_reminders" style="width:100%">
+            <option value="1" <?=$botStatus['reminders_enabled']?'selected':''?>>🔔 Repeat Alert until Order is Active (Recommended)</option>
+            <option value="0" <?=!$botStatus['reminders_enabled']?'selected':''?>>🔕 Alert Only Once on Placement</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:4px">Reminder Repeat Interval</label>
+          <select name="order_bot_reminder_interval_mins" style="width:100%">
+            <option value="10" <?=$botStatus['reminder_interval_mins']==10?'selected':''?>>Every 10 Minutes (High SLA / Flash Sales)</option>
+            <option value="15" <?=$botStatus['reminder_interval_mins']==15?'selected':''?>>Every 15 Minutes (Standard Recommended)</option>
+            <option value="30" <?=$botStatus['reminder_interval_mins']==30?'selected':''?>>Every 30 Minutes</option>
+            <option value="60" <?=$botStatus['reminder_interval_mins']==60?'selected':''?>>Every 1 Hour</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button type="button" class="btn-dark" onclick="testTelegramBot()">📲 Send Test Telegram Ping</button>
+        <button type="submit" class="btn-primary" style="background:#059669;border-color:#059669">💾 Save Bot Configuration</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 0-SECOND WHMCS HOOK GUIDE PANEL (COLLAPSIBLE) -->
+  <div id="whmcsHookGuidePanel" style="display:none;margin-top:16px;background:#f0fdf4;padding:16px;border-radius:10px;border:1px solid #bbf7d0">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <strong style="color:#166534;font-size:15px">⚡ 0-Second Instant Notification Setup (WHMCS Native Hook)</strong>
+      <button type="button" onclick="toggleElement('whmcsHookGuidePanel')" style="padding:2px 8px;font-size:12px">✕ Close</button>
+    </div>
+    <p style="font-size:13px;color:#1e3a8a;margin:0 0 10px;line-height:1.5">
+      जब भी ग्राहक WHMCS पर <b>Checkout</b> या <b>Payment</b> करता है, WHMCS तुरंत इस हुक को चलाता है जिससे Telegram पर <b>0 सेकंड</b> में बिना किसी देरी के अलर्ट पहुंच जाता है!
+    </p>
+    <div style="background:#0f172a;color:#f8fafc;padding:12px;border-radius:8px;font-size:12px;line-height:1.5;overflow-x:auto">
+      <b>📌 Step 1:</b> अपने WHMCS cPanel में जाएं और इस फाइल को अपलोड करें:<br>
+      <code>/home/oxydomain/public_html/user/includes/hooks/ambition_order_telegram_hook.php</code><br><br>
+      <b>📌 Step 2:</b> फाइल आपके मास्टर ओएस रिपॉजिटरी में पहले से तैयार है: <code>ambition_order_telegram_hook.php</code><br>
+      Webhook URL: <code>https://control.jixsite.com/api.php?action=whmcs_order_webhook</code>
+    </div>
+    <div style="margin-top:10px">
+      <a href="ambition_order_telegram_hook.php" download class="btn-primary" style="font-size:12px;background:#16a34a;border-color:#16a34a;text-decoration:none">⬇ Download ambition_order_telegram_hook.php</a>
+    </div>
+  </div>
+
+  <!-- STAT METRICS CARDS -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:16px 0">
     <div style="background:#eff6ff;padding:12px 14px;border-radius:8px;border:1px solid #bfdbfe">
       <small style="color:#1e40af;font-weight:700">Chandrika Hosting Setup</small>
-      <strong style="display:block;font-size:20px;color:#2563eb;margin-top:4px">cPanel & DNS Provisioning</strong>
-      <small>Welcome Email & cPanel Pass Dispatch</small>
+      <strong style="display:block;font-size:22px;color:#2563eb;margin-top:2px"><?=$pendingHostingCount?> Pending Hosting</strong>
+      <small>cPanel & DNS Provisioning Queue</small>
     </div>
     <div style="background:#f0fdf4;padding:12px 14px;border-radius:8px;border:1px solid #bbf7d0">
       <small style="color:#166534;font-weight:700">Priya / Sanju Domain Queue</small>
-      <strong style="display:block;font-size:20px;color:#16a34a;margin-top:4px">26 Registrars Registration</strong>
-      <small>Nameserver & KYC Verification</small>
+      <strong style="display:block;font-size:22px;color:#16a34a;margin-top:2px"><?=$pendingDomainCount?> Pending Domains</strong>
+      <small>26 Registrars KYC Verification</small>
     </div>
-    <div style="background:#fef2f2;padding:12px 14px;border-radius:8px;border:1px solid #fecaca">
-      <small style="color:#991b1b;font-weight:700">Night Auto-Watchdog</small>
-      <strong style="display:block;font-size:20px;color:#dc2626;margin-top:4px">0 Delayed Domains</strong>
-      <small>Prevents overnight domain hijack</small>
+    <div style="background:<?=count($pendingOrders)>0?'#fef2f2':'#f0fdf4'?>;padding:12px 14px;border-radius:8px;border:1px solid <?=count($pendingOrders)>0?'#fecaca':'#bbf7d0'?>">
+      <small style="color:<?=count($pendingOrders)>0?'#991b1b':'#166534'?>;font-weight:700">Total Pending SLA Queue</small>
+      <strong style="display:block;font-size:22px;color:<?=count($pendingOrders)>0?'#dc2626':'#16a34a'?>;margin-top:2px"><?=count($pendingOrders)?> Orders</strong>
+      <small>Zero-Drop Active Watchdog</small>
+    </div>
+    <div style="background:#f8fafc;padding:12px 14px;border-radius:8px;border:1px solid #e2e8f0">
+      <small style="color:#475569;font-weight:700">Last Watchdog Scan</small>
+      <strong style="display:block;font-size:16px;color:#0f172a;margin-top:4px"><?=$botStatus['last_run_at'] ? date('h:i A (d M)', strtotime($botStatus['last_run_at'])) : 'Just now'?></strong>
+      <small><?=$botStatus['total_orders']?> Total Orders Tracked</small>
     </div>
   </div>
 
-  <h4 style="margin:16px 0 8px;font-size:14px;color:#334155">⚡ Active Delivery Queue</h4>
-  <table>
-    <thead>
-      <tr>
-        <th>Invoice #</th>
-        <th>Customer & Domain</th>
-        <th>Service Type</th>
-        <th>Assigned Owner</th>
-        <th>Delivery Status</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      <?php foreach ($pdo->query("SELECT * FROM payment_records WHERE service_delivered = 0 ORDER BY id DESC LIMIT 20") as $pr): ?>
+  <!-- TABS: PENDING ORDERS vs PAYMENT PROOFS vs ALL ORDERS -->
+  <div style="display:flex;gap:8px;border-bottom:1px solid #e2e8f0;padding-bottom:8px;margin-bottom:14px;flex-wrap:wrap">
+    <button type="button" id="tabBtnPending" class="btn-primary" onclick="showOrderTab('pending')" style="font-size:12px;padding:6px 12px">🚨 Pending WHMCS Orders (<?=count($pendingOrders)?>)</button>
+    <button type="button" id="tabBtnPayments" class="btn-dark" onclick="showOrderTab('payments')" style="font-size:12px;padding:6px 12px">💳 WhatsApp UPI & Delivery Queue (<?=count($paymentRows)?>)</button>
+    <button type="button" id="tabBtnAll" class="btn-dark" onclick="showOrderTab('all')" style="font-size:12px;padding:6px 12px">📜 Monitored Orders History (<?=count($recentOrders)?>)</button>
+  </div>
+
+  <!-- TAB 1: PENDING ORDERS WITH SLA BADGES & 1-CLICK TELEGRAM ESCALATION -->
+  <div id="orderTabPending">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h4 style="margin:0;font-size:14px;color:#334155">⚡ Active Pending Orders (SLA Auto-Escalation Active)</h4>
+      <small style="color:#64748b">जब तक ऑर्डर Active नहीं होगा, तब तक बॉट हर <?=$botStatus['reminder_interval_mins']?> मिनट पर रिमाइंडर भेजता रहेगा।</small>
+    </div>
+    <table>
+      <thead>
         <tr>
-          <td><b>#<?=$pr['whmcs_invoice_id']?></b></td>
-          <td><b><?=htmlspecialchars((string)$pr['customer_name'])?></b><br><small style="color:#16a34a">₹<?=$pr['amount']?></small></td>
-          <td><span class="pill pill-blue"><?=htmlspecialchars($pr['payment_source'])?></span></td>
-          <td><b><?=htmlspecialchars($pr['delivery_owner'])?></b></td>
-          <td><span class="pill pill-orange">Pending Delivery</span></td>
-          <td>
-            <button class="btn-primary" style="font-size:11px;padding:4px 8px" onclick="verifyPay(<?=$pr['id']?>,'mark_delivered')">Mark Delivered (<?=$pr['delivery_owner']?>)</button>
-          </td>
+          <th>Order #</th>
+          <th>Customer</th>
+          <th>Amount & Gateway</th>
+          <th>Service Items</th>
+          <th>Pending Duration & SLA</th>
+          <th>Escalation Alerts</th>
+          <th>Immediate Action</th>
         </tr>
-      <?php endforeach; ?>
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        <?php if (empty($pendingOrders)): ?>
+          <tr>
+            <td colspan="7" style="text-align:center;padding:28px;color:#059669;background:#f0fdf4;border-radius:8px">
+              🎉 <b>शाबाश! अभी कोई भी Pending Order नहीं है।</b> सभी ऑर्डर्स डिलीवर और एक्टिव हैं!
+            </td>
+          </tr>
+        <?php else: foreach ($pendingOrders as $po):
+          $pendingMins = (int)floor((time() - strtotime((string)$po['order_date'])) / 60);
+          if ($pendingMins < 15) {
+              $slaBadge = "<span class='pill pill-green'>⏳ {$pendingMins}m Pending</span>";
+          } elseif ($pendingMins < 30) {
+              $slaBadge = "<span class='pill' style='background:#fef3c7;color:#92400e'>⚠️ {$pendingMins}m (SLA Warning)</span>";
+          } else {
+              $slaBadge = "<span class='pill pill-red'>🚨 {$pendingMins}m OVERDUE SLA!</span>";
+          }
+        ?>
+          <tr>
+            <td>
+              <a href="<?=htmlspecialchars(whmcs_deep_link('order', $po['order_id']))?>" target="_blank" style="color:#2563eb;font-weight:700">
+                #<?=$po['order_id']?> ↗
+              </a>
+              <?php if (!empty($po['order_num'])): ?>
+                <br><small style="color:#64748b">Num: <?=htmlspecialchars($po['order_num'])?></small>
+              <?php endif; ?>
+            </td>
+            <td>
+              <b><?=htmlspecialchars((string)$po['client_name'])?></b>
+              <?php if (!empty($po['client_id'])): ?>
+                <br><small><a href="<?=htmlspecialchars(whmcs_deep_link('client', $po['client_id']))?>" target="_blank" style="color:#64748b">Client #<?=$po['client_id']?> ↗</a></small>
+              <?php endif; ?>
+            </td>
+            <td>
+              <b style="color:#16a34a">₹<?=number_format((float)$po['amount'], 2)?></b><br>
+              <small style="color:#64748b"><?=htmlspecialchars((string)$po['payment_method'])?></small>
+            </td>
+            <td>
+              <div style="font-size:12px;line-height:1.4">
+                <?=nl2br((string)$po['lineitems_summary'])?>
+              </div>
+            </td>
+            <td>
+              <?=$slaBadge?><br>
+              <small style="color:#64748b"><?=date('d M, h:i A', strtotime((string)$po['order_date']))?></small>
+            </td>
+            <td>
+              <span class="pill pill-blue">🔔 <?=(int)$po['alert_count']?> Alert(s) Sent</span>
+              <br><small style="color:#64748b">Last: <?=date('h:i A', strtotime((string)$po['last_alerted_at']))?></small>
+            </td>
+            <td>
+              <div style="display:flex;gap:4px;flex-direction:column">
+                <button type="button" class="btn-primary" style="font-size:11px;padding:4px 8px;background:#dc2626;border-color:#dc2626" onclick="sendManualOrderAlert(<?=$po['order_id']?>)">🚨 Alert Telegram</button>
+                <a href="<?=htmlspecialchars(whmcs_deep_link('order', $po['order_id']))?>" target="_blank" class="btn-dark" style="font-size:11px;padding:4px 8px;text-align:center">WHMCS ↗</a>
+              </div>
+            </td>
+          </tr>
+        <?php endforeach; endif; ?>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- TAB 2: MANUAL UPI PROOFS & DELIVERY QUEUE -->
+  <div id="orderTabPayments" style="display:none">
+    <h4 style="margin:16px 0 8px;font-size:14px;color:#334155">⚡ WhatsApp UPI & Manual Payments Queue</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>Invoice #</th>
+          <th>Customer & Domain</th>
+          <th>Service Type</th>
+          <th>Assigned Owner</th>
+          <th>Delivery Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php if (empty($paymentRows)): ?>
+          <tr><td colspan="6" style="text-align:center;color:#64748b;padding:20px">कोई पेंडिंग पेमेंट या डिलीवरी नहीं है।</td></tr>
+        <?php else: foreach ($paymentRows as $pr): ?>
+          <tr>
+            <td><b>#<?=$pr['whmcs_invoice_id']?></b></td>
+            <td><b><?=htmlspecialchars((string)$pr['customer_name'])?></b><br><small style="color:#16a34a">₹<?=$pr['amount']?></small></td>
+            <td><span class="pill pill-blue"><?=htmlspecialchars($pr['payment_source'])?></span></td>
+            <td><b><?=htmlspecialchars($pr['delivery_owner'])?></b></td>
+            <td><span class="pill pill-orange">Pending Delivery</span></td>
+            <td>
+              <button class="btn-primary" style="font-size:11px;padding:4px 8px" onclick="verifyPay(<?=$pr['id']?>,'mark_delivered')">Mark Delivered (<?=$pr['delivery_owner']?>)</button>
+            </td>
+          </tr>
+        <?php endforeach; endif; ?>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- TAB 3: ALL MONITORED ORDERS HISTORY -->
+  <div id="orderTabAll" style="display:none">
+    <h4 style="margin:16px 0 8px;font-size:14px;color:#334155">📜 Monitored Orders History (Last 50 Orders)</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>Order #</th>
+          <th>Date</th>
+          <th>Customer</th>
+          <th>Amount</th>
+          <th>Items</th>
+          <th>Status</th>
+          <th>WHMCS</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($recentOrders as $ro): ?>
+          <tr>
+            <td><b>#<?=$ro['order_id']?></b></td>
+            <td><small><?=date('d M Y, h:i A', strtotime((string)$ro['order_date']))?></small></td>
+            <td><b><?=htmlspecialchars((string)$ro['client_name'])?></b></td>
+            <td><b style="color:#16a34a">₹<?=number_format((float)$ro['amount'], 2)?></b></td>
+            <td><small><?=nl2br((string)$ro['lineitems_summary'])?></small></td>
+            <td>
+              <span class="pill <?=$ro['order_status']==='Active'?'pill-green':($ro['order_status']==='Pending'?'pill-red':'pill-dark')?>">
+                <?=$ro['order_status']?>
+              </span>
+            </td>
+            <td>
+              <a href="<?=htmlspecialchars(whmcs_deep_link('order', $ro['order_id']))?>" target="_blank" class="btn-dark" style="font-size:11px;padding:3px 7px">View ↗</a>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
 </div>
+
+<script>
+function showOrderTab(tab) {
+  document.getElementById('orderTabPending').style.display = (tab === 'pending') ? 'block' : 'none';
+  document.getElementById('orderTabPayments').style.display = (tab === 'payments') ? 'block' : 'none';
+  document.getElementById('orderTabAll').style.display = (tab === 'all') ? 'block' : 'none';
+
+  document.getElementById('tabBtnPending').className = (tab === 'pending') ? 'btn-primary' : 'btn-dark';
+  document.getElementById('tabBtnPayments').className = (tab === 'payments') ? 'btn-primary' : 'btn-dark';
+  document.getElementById('tabBtnAll').className = (tab === 'all') ? 'btn-primary' : 'btn-dark';
+}
+
+function toggleElement(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+}
+
+async function testTelegramBot() {
+  const fd = new FormData();
+  fd.append('action', 'test_telegram_bot');
+  const btn = window.event ? window.event.target : null;
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Sending...'; btn.disabled = true; }
+  try {
+    const r = await postApi(fd);
+    alert(r.message || (r.status === 'ok' ? '✅ Telegram Test Sent!' : 'Error'));
+  } finally {
+    if (btn) { btn.textContent = oldText; btn.disabled = false; }
+  }
+}
+
+async function runOrderBotCheck() {
+  const fd = new FormData();
+  fd.append('action', 'run_order_bot_check');
+  const btn = window.event ? window.event.target : null;
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Checking WHMCS...'; btn.disabled = true; }
+  try {
+    const r = await postApi(fd);
+    alert(r.message || 'Check Complete');
+    location.reload();
+  } finally {
+    if (btn) { btn.textContent = oldText; btn.disabled = false; }
+  }
+}
+
+async function sendManualOrderAlert(orderId) {
+  if (!confirm(`Order #${orderId} ka urgent SLA alert Telegram par bhejein?`)) return;
+  const fd = new FormData();
+  fd.append('action', 'send_manual_order_alert');
+  fd.append('order_id', orderId);
+  const r = await postApi(fd);
+  alert(r.message || (r.status === 'ok' ? 'Alert Sent!' : 'Error'));
+  if (r.status === 'ok') location.reload();
+}
+
+async function saveOrderBotSettings(e) {
+  e.preventDefault();
+  const form = document.getElementById('orderBotSettingsForm');
+  const r = await postApi(new FormData(form));
+  if (r.status === 'ok') {
+    alert('✅ Telegram Order Bot Settings Saved Successfully!');
+    location.reload();
+  } else {
+    alert('Error saving settings: ' + (r.message || 'Failed'));
+  }
+}
+</script>
 <?php endif; ?>
 
 <?php

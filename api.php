@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/whm_whmcs_sync.php';
+require_once __DIR__ . '/order_bot_engine.php';
 require_once __DIR__ . '/ai_brain.php';
 
 $pdo = db();
@@ -358,6 +359,8 @@ try {
             if (!$isAdmin) throw new Exception('Admin only');
             $allowedKeys = [
                 'active_llm_provider', 'telegram_bot_token', 'aarav_telegram_chat_id',
+                'order_bot_telegram_chat_id', 'order_bot_enabled', 'order_bot_pending_reminders',
+                'order_bot_reminder_interval_mins',
                 'whmcs_url', 'whmcs_api_identifier', 'whmcs_api_secret',
                 'razorpay_key_id', 'razorpay_key_secret'
             ];
@@ -367,8 +370,52 @@ try {
                         ->execute([$k, trim((string)$v)]);
                 }
             }
-            echo json_encode(['status' => 'ok']);
+            echo json_encode(['status' => 'ok', 'message' => 'Settings saved successfully']);
             break;
+
+        // Telegram 24/7 Order Bot: Test Telegram Connection
+        case 'test_telegram_bot':
+            if (!$isAdmin) throw new Exception('Admin only');
+            $customToken = trim($_POST['telegram_bot_token'] ?? '');
+            $customChatId = trim($_POST['telegram_chat_id'] ?? '');
+            $testRes = AmbitionOrderBot::testTelegramConnection($customToken, $customChatId);
+            if ($testRes['status'] === 'ok') {
+                echo json_encode(['status' => 'ok', 'message' => '✅ Telegram Bot Test Message Sent Successfully! Check your Telegram chat.']);
+            } else {
+                echo json_encode(['status' => 'error', 'message' => $testRes['message'] ?? 'Failed to send Telegram message']);
+            }
+            break;
+
+        // Telegram 24/7 Order Bot: Run Instant Sync & Escalation Check
+        case 'run_order_bot_check':
+            if (!$isAdmin) throw new Exception('Admin only');
+            $rep = AmbitionOrderBot::syncAndCheckOrders(true);
+            echo json_encode([
+                'status' => 'ok',
+                'message' => "✅ Order Watchdog Check Complete! Inspected {$rep['orders_inspected']} orders. ({$rep['new_orders_alerted']} new alerted, {$rep['pending_reminders_sent']} pending reminders, {$rep['activated_confirmed']} activated)",
+                'data' => $rep
+            ]);
+            break;
+
+        // Telegram 24/7 Order Bot: 1-Click Manual Escalation
+        case 'send_manual_order_alert':
+            $targetOrderId = (int)($_POST['order_id'] ?? 0);
+            if ($targetOrderId <= 0) throw new Exception('Invalid order ID');
+            $escRes = AmbitionOrderBot::sendManualEscalation($targetOrderId);
+            if ($escRes['status'] === 'ok') {
+                echo json_encode(['status' => 'ok', 'message' => "🚨 Urgent SLA Alert for Order #{$targetOrderId} sent to Telegram!"]);
+            } else {
+                echo json_encode(['status' => 'error', 'message' => $escRes['message'] ?? 'Telegram alert failed']);
+            }
+            break;
+
+        // 0-Second Instant Webhook Receiver from WHMCS Hook
+        case 'whmcs_order_webhook':
+            $whOrderId = (int)($_POST['order_id'] ?? ($_GET['order_id'] ?? 0));
+            $hookName = (string)($_POST['hook_name'] ?? ($_GET['hook_name'] ?? 'WHMCS_Hook'));
+            $res = AmbitionOrderBot::processInstantWebhook($whOrderId, $hookName, $_REQUEST);
+            echo json_encode($res);
+            exit;
 
         case 'test_whmcs_connection':
             if (!$isAdmin) throw new Exception('Admin only');
