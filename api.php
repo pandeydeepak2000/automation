@@ -399,6 +399,12 @@ try {
                         'message' => "🚨 WHMCS API Error: IP Banned!\n\nWHMCS security firewall ne aapke server ki IP [ {$serverIp} ] ko block/ban kar diya hai.\n\n👉 Turant Unban Karein:\n1. WHMCS Admin me jayein: https://www.ambitionhost.in/user/devokedev/bannedips.php\n2. Wahan '{$serverIp}' ko Delete / Unban karein.\n3. WHMCS Admin ➔ System Settings ➔ General Settings ➔ Security tab me 'API IP Access Restriction' me '{$serverIp}' ko Whitelist (Add) kar dein!",
                         'data' => $rep
                     ]);
+                } elseif (stripos($err, 'Authentication Failed') !== false) {
+                    echo json_encode([
+                        'status' => 'error',
+                        'message' => "⚠️ WHMCS API Error: Authentication Failed!\n\nWHMCS ne API Identifier ya Secret ko galat bataya hai.\n\n💡 समाधान:\n1. WHMCS Admin me jayein: System Settings ➔ API Credentials\n2. Apne API Credential (rPicqqHnc...) ka Secret dekhein (ya naya Generate New API Credential karein).\n3. Module 03 me '⚙️ Bot Settings' open karein aur 'API Identifier' aur 'API Secret' update karke Save karein!",
+                        'data' => $rep
+                    ]);
                 } else {
                     echo json_encode([
                         'status' => 'error',

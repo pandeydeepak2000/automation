@@ -322,9 +322,36 @@ if ($activeModId === 3):
           <small style="color:#64748b;font-size:10px">Default: https://api.telegram.org (Only change if host blocks direct Telegram)</small>
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+
+      <!-- WHMCS API CREDENTIALS CENTER -->
+      <div style="border-top:1px solid #cbd5e1;padding-top:14px;margin-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div>
+            <strong style="color:#0f172a;font-size:13px">🔑 WHMCS API Connection Keys</strong>
+            <small style="color:#64748b;display:block">Agar "Authentication Failed" aaye toh yahan sahi Identifier aur Secret save karein</small>
+          </div>
+          <a href="https://www.ambitionhost.in/user/devokedev/configapicredentials.php" target="_blank" style="font-size:11px;background:#e0f2fe;color:#0284c7;padding:4px 8px;border-radius:4px;text-decoration:none;font-weight:700">Open WHMCS API Credentials ↗</a>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+          <div>
+            <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:4px">WHMCS URL</label>
+            <input name="whmcs_url" value="<?=htmlspecialchars(get_sys_setting('whmcs_url', defined('WHMCS_URL')?WHMCS_URL:'https://www.ambitionhost.in/user'))?>" placeholder="https://www.ambitionhost.in/user" style="width:100%" required>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:4px">WHMCS API Identifier</label>
+            <input name="whmcs_api_identifier" value="<?=htmlspecialchars(get_sys_setting('whmcs_api_identifier', (defined('WHMCS_API_IDENTIFIER') && strpos(WHMCS_API_IDENTIFIER,'YOUR_')!==0)?WHMCS_API_IDENTIFIER:''))?>" placeholder="e.g. rPicqqHncAugSejlkGcfPXTIODSQcSS" style="width:100%" required>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:4px">WHMCS API Secret</label>
+            <input type="password" name="whmcs_api_secret" value="<?=htmlspecialchars(get_sys_setting('whmcs_api_secret', (defined('WHMCS_API_SECRET') && strpos(WHMCS_API_SECRET,'YOUR_')!==0)?WHMCS_API_SECRET:''))?>" placeholder="••••••••••••••••" style="width:100%" required>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button type="button" class="btn-dark" style="background:#0284c7;color:#fff" onclick="diagnoseWhmcsOrders()">🔍 Test WHMCS Connection</button>
         <button type="button" class="btn-dark" onclick="testTelegramBot()">📲 Send Test Telegram Ping</button>
-        <button type="submit" class="btn-primary" style="background:#059669;border-color:#059669">💾 Save Bot Configuration</button>
+        <button type="submit" class="btn-primary" style="background:#059669;border-color:#059669">💾 Save Bot & WHMCS Configuration</button>
       </div>
     </form>
   </div>
