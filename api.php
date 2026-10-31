@@ -390,11 +390,19 @@ try {
         case 'run_order_bot_check':
             if (!$isAdmin) throw new Exception('Admin only');
             $rep = AmbitionOrderBot::syncAndCheckOrders(true);
-            echo json_encode([
-                'status' => 'ok',
-                'message' => "✅ Order Watchdog Check Complete! Inspected {$rep['orders_inspected']} orders. ({$rep['new_orders_alerted']} new alerted, {$rep['pending_reminders_sent']} pending reminders, {$rep['activated_confirmed']} activated)",
-                'data' => $rep
-            ]);
+            if (!empty($rep['api_error'])) {
+                echo json_encode([
+                    'status' => 'error',
+                    'message' => "⚠️ WHMCS API Error: " . $rep['api_error'] . "\n\n💡 समाधान: WHMCS Admin ➔ System Settings ➔ API Credentials में जाएं, अपने API Role को Edit करें और 'Get Orders' पर टिक (Check) लगाकर Save कर दें!",
+                    'data' => $rep
+                ]);
+            } else {
+                echo json_encode([
+                    'status' => 'ok',
+                    'message' => "✅ Order Watchdog Check Complete! Inspected {$rep['orders_inspected']} orders. ({$rep['new_orders_alerted']} new alerted, {$rep['pending_reminders_sent']} pending reminders, {$rep['activated_confirmed']} activated)",
+                    'data' => $rep
+                ]);
+            }
             break;
 
         // Telegram 24/7 Order Bot: 1-Click Manual Escalation

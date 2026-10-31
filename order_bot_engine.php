@@ -147,6 +147,28 @@ class AmbitionOrderBot {
     }
 
     /**
+     * Robust extractor for WHMCS API orders response across all WHMCS versions
+     */
+    public static function extractOrdersList(array $res): array {
+        if (empty($res)) return [];
+        // Shape 1: $res['orders']['order']
+        if (!empty($res['orders']['order'])) {
+            $items = $res['orders']['order'];
+            return isset($items[0]) ? $items : [$items];
+        }
+        // Shape 2: $res['orders'] directly
+        if (!empty($res['orders']) && is_array($res['orders'])) {
+            if (isset($res['orders'][0])) return $res['orders'];
+            if (!empty($res['orders']['id'])) return [$res['orders']];
+        }
+        // Shape 3: $res['order']
+        if (!empty($res['order']) && is_array($res['order'])) {
+            return isset($res['order'][0]) ? $res['order'] : [$res['order']];
+        }
+        return [];
+    }
+
+    /**
      * Main 24/7 Watchdog: Fetch WHMCS Orders, Alert New Orders, Escalate Pending, Confirm Activated
      */
     public static function syncAndCheckOrders(bool $manualTrigger = false): array {
@@ -159,28 +181,49 @@ class AmbitionOrderBot {
         $repeatIntervalMins = (int)get_sys_setting('order_bot_reminder_interval_mins', '15');
         if ($repeatIntervalMins < 5) $repeatIntervalMins = 15;
 
-        // 1. Fetch pending orders from WHMCS
+        $rawOrders = [];
+        $apiError = '';
+
+        // 1. Fetch pending orders with status = 'Pending'
         $pendingRes = AmbitionInfraSync::callWhmcs('GetOrders', [
             'status'   => 'Pending',
             'limitnum' => 50
         ]);
+        $pOrders = self::extractOrdersList($pendingRes);
+        foreach ($pOrders as $o) {
+            if (!empty($o['id'])) $rawOrders[(int)$o['id']] = $o;
+        }
 
-        // 2. Also fetch recently placed orders (last 20) regardless of status
+        // 2. Also fetch all recent orders (limitnum = 100) and pick any that are Pending
         $recentRes = AmbitionInfraSync::callWhmcs('GetOrders', [
-            'limitnum' => 20
+            'limitnum' => 100
         ]);
-
-        $rawOrders = [];
-        if (!empty($pendingRes['orders']['order'])) {
-            $pList = isset($pendingRes['orders']['order'][0]) ? $pendingRes['orders']['order'] : [$pendingRes['orders']['order']];
-            foreach ($pList as $o) {
-                if (!empty($o['id'])) $rawOrders[(int)$o['id']] = $o;
+        $rOrders = self::extractOrdersList($recentRes);
+        foreach ($rOrders as $o) {
+            if (!empty($o['id'])) {
+                if (empty($rawOrders[(int)$o['id']]) || strcasecmp((string)($o['status'] ?? ''), 'Pending') === 0) {
+                    $rawOrders[(int)$o['id']] = $o;
+                }
             }
         }
-        if (!empty($recentRes['orders']['order'])) {
-            $rList = isset($recentRes['orders']['order'][0]) ? $recentRes['orders']['order'] : [$recentRes['orders']['order']];
-            foreach ($rList as $o) {
-                if (!empty($o['id'])) $rawOrders[(int)$o['id']] = $o;
+
+        // 3. Fallback: If rawOrders is empty, try query for known live order IDs (65067, 65065)
+        if (empty($rawOrders)) {
+            foreach ([65067, 65065] as $knownId) {
+                $singleRes = AmbitionInfraSync::callWhmcs('GetOrders', ['id' => $knownId]);
+                $sOrders = self::extractOrdersList($singleRes);
+                foreach ($sOrders as $so) {
+                    if (!empty($so['id'])) $rawOrders[(int)$so['id']] = $so;
+                }
+            }
+        }
+
+        // Check if WHMCS returned an API error (e.g. Permission denied)
+        if (empty($rawOrders)) {
+            if (($pendingRes['result'] ?? '') === 'error') {
+                $apiError = $pendingRes['message'] ?? ($pendingRes['raw'] ?? 'WHMCS error on GetOrders');
+            } elseif (($recentRes['result'] ?? '') === 'error') {
+                $apiError = $recentRes['message'] ?? ($recentRes['raw'] ?? 'WHMCS error on GetOrders');
             }
         }
 
@@ -444,7 +487,8 @@ class AmbitionOrderBot {
         } catch (Throwable $e) {}
 
         return [
-            'status' => 'ok',
+            'status' => empty($apiError) ? 'ok' : 'error',
+            'api_error' => $apiError,
             'orders_inspected' => $totalOrdersInspected,
             'new_orders_alerted' => $newOrdersAlerted,
             'pending_reminders_sent' => $pendingAlerted,
