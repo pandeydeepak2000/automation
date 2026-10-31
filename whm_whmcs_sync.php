@@ -821,3 +821,13 @@ class AmbitionInfraSync {
 function call_whmcs_api(string $action, array $params = []): array {
     return AmbitionInfraSync::callWhmcs($action, $params);
 }
+
+function get_server_public_ip(): string {
+    static $cachedIp = null;
+    if ($cachedIp !== null) return $cachedIp;
+    $ip = @file_get_contents('https://api.ipify.org');
+    if ($ip && filter_var(trim($ip), FILTER_VALIDATE_IP)) {
+        return $cachedIp = trim($ip);
+    }
+    return $cachedIp = ($_SERVER['SERVER_ADDR'] ?? (gethostbyname(gethostname()) ?: '190.92.174.190'));
+}

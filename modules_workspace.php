@@ -274,6 +274,13 @@ if ($activeModId === 3):
       </div>
       <button type="button" onclick="toggleElement('orderBotSettingsPanel')" style="padding:4px 10px;font-size:12px">✕ Hide</button>
     </div>
+    <div style="background:#eff6ff;padding:10px 14px;border-radius:8px;border:1px solid #bfdbfe;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <span style="font-size:12px;color:#1e40af">
+        🌐 <b>Server Outbound IP:</b> <code style="background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-weight:700"><?=htmlspecialchars(get_server_public_ip())?></code>
+        (WHMCS API access ke liye is IP ka unbanned & whitelisted hona zaroori hai)
+      </span>
+      <a href="https://www.ambitionhost.in/user/devokedev/bannedips.php" target="_blank" style="font-size:11px;background:#2563eb;color:#fff;padding:4px 8px;border-radius:4px;text-decoration:none;font-weight:700">🔓 WHMCS Banned IPs ↗</a>
+    </div>
     <form id="orderBotSettingsForm" onsubmit="saveOrderBotSettings(event)">
       <input type="hidden" name="action" value="save_system_settings">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">

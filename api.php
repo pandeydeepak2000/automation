@@ -391,11 +391,21 @@ try {
             if (!$isAdmin) throw new Exception('Admin only');
             $rep = AmbitionOrderBot::syncAndCheckOrders(true);
             if (!empty($rep['api_error'])) {
-                echo json_encode([
-                    'status' => 'error',
-                    'message' => "⚠️ WHMCS API Error: " . $rep['api_error'] . "\n\n💡 समाधान: WHMCS Admin ➔ System Settings ➔ API Credentials में जाएं, अपने API Role को Edit करें और 'Get Orders' पर टिक (Check) लगाकर Save कर दें!",
-                    'data' => $rep
-                ]);
+                $err = $rep['api_error'];
+                if (stripos($err, 'IP Banned') !== false) {
+                    $serverIp = get_server_public_ip();
+                    echo json_encode([
+                        'status' => 'error',
+                        'message' => "🚨 WHMCS API Error: IP Banned!\n\nWHMCS security firewall ne aapke server ki IP [ {$serverIp} ] ko block/ban kar diya hai.\n\n👉 Turant Unban Karein:\n1. WHMCS Admin me jayein: https://www.ambitionhost.in/user/devokedev/bannedips.php\n2. Wahan '{$serverIp}' ko Delete / Unban karein.\n3. WHMCS Admin ➔ System Settings ➔ General Settings ➔ Security tab me 'API IP Access Restriction' me '{$serverIp}' ko Whitelist (Add) kar dein!",
+                        'data' => $rep
+                    ]);
+                } else {
+                    echo json_encode([
+                        'status' => 'error',
+                        'message' => "⚠️ WHMCS API Error: " . $err . "\n\n💡 समाधान: WHMCS Admin ➔ System Settings ➔ API Credentials में जाएं, अपने API Role को Edit करें और 'Get Orders' पर टिक (Check) लगाकर Save कर दें!",
+                        'data' => $rep
+                    ]);
+                }
             } else {
                 echo json_encode([
                     'status' => 'ok',
@@ -408,7 +418,9 @@ try {
         case 'diagnose_whmcs_orders':
             if (!$isAdmin) throw new Exception('Admin only');
             $diag = AmbitionOrderBot::diagnoseWhmcsOrders();
+            $serverIp = get_server_public_ip();
             $msg = "🔍 WHMCS Orders API Diagnostic:\n"
+                 . "• Server Outbound IP: {$serverIp}\n"
                  . "• Target API: {$diag['target_url']}\n"
                  . "• API Configured: " . ($diag['api_configured'] ? 'YES' : 'NO') . "\n"
                  . "• Pending Orders Detected: {$diag['pending_orders_found']}\n"
@@ -418,7 +430,20 @@ try {
                 $msg .= "• Detected IDs: " . json_encode($diag['detected_order_ids'], JSON_UNESCAPED_UNICODE) . "\n";
             }
             if (!empty($diag['api_issues'])) {
-                $msg .= "\n⚠️ WHMCS ISSUES FOUND:\n" . implode("\n", $diag['api_issues']) . "\n\n👉 WHMCS Admin ➔ System Settings ➔ API Credentials ➔ Role Permissions me 'Get Orders' ko tick karein!";
+                $hasBan = false;
+                foreach ($diag['api_issues'] as $iss) {
+                    if (stripos($iss, 'IP Banned') !== false) $hasBan = true;
+                }
+                if ($hasBan) {
+                    $msg .= "\n🚨 CRITICAL: WHMCS IP BANNED DETECTED!\n"
+                         . "WHMCS ne server IP [ {$serverIp} ] ko ban kar diya hai.\n\n"
+                         . "👉 Solution:\n"
+                         . "1. Open: https://www.ambitionhost.in/user/devokedev/bannedips.php\n"
+                         . "2. '{$serverIp}' ko Unban / Delete karein.\n"
+                         . "3. General Settings ➔ Security ➔ 'API IP Access Restriction' me '{$serverIp}' ko add karein!";
+                } else {
+                    $msg .= "\n⚠️ WHMCS ISSUES FOUND:\n" . implode("\n", $diag['api_issues']) . "\n\n👉 WHMCS Admin ➔ System Settings ➔ API Credentials ➔ Role Permissions me 'Get Orders' ko tick karein!";
+                }
             } else if ($diag['pending_orders_found'] > 0 || $diag['recent_orders_found'] > 0) {
                 $msg .= "\n✅ WHMCS API is successfully returning orders!";
             }
