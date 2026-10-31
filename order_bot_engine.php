@@ -28,6 +28,7 @@ class AmbitionOrderBot {
                   `order_date` datetime DEFAULT NULL,
                   `has_hosting` tinyint(1) NOT NULL DEFAULT 0,
                   `has_domain` tinyint(1) NOT NULL DEFAULT 0,
+                  `has_vps` tinyint(1) NOT NULL DEFAULT 0,
                   `lineitems_summary` text DEFAULT NULL,
                   `first_detected_at` datetime DEFAULT CURRENT_TIMESTAMP,
                   `last_alerted_at` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -41,6 +42,10 @@ class AmbitionOrderBot {
                   KEY `client_id` (`client_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             ");
+
+            try {
+                $pdo->exec("ALTER TABLE `whmcs_orders_cache` ADD COLUMN `has_vps` tinyint(1) NOT NULL DEFAULT 0 AFTER `has_domain`");
+            } catch (Throwable $e) {}
         } catch (Throwable $e) {
             error_log("AmbitionOrderBot::ensureOrdersSchema error: " . $e->getMessage());
         }
@@ -309,8 +314,8 @@ class AmbitionOrderBot {
 
         $botEnabled = get_sys_setting('order_bot_enabled', '1');
         $remindersEnabled = get_sys_setting('order_bot_pending_reminders', '1');
-        $repeatIntervalMins = (int)get_sys_setting('order_bot_reminder_interval_mins', '15');
-        if ($repeatIntervalMins < 5) $repeatIntervalMins = 15;
+        $repeatIntervalMins = (int)get_sys_setting('order_bot_reminder_interval_mins', '10');
+        if ($repeatIntervalMins < 5) $repeatIntervalMins = 10;
 
         $rawOrders = [];
         $apiError = '';
@@ -386,9 +391,9 @@ class AmbitionOrderBot {
             INSERT INTO whmcs_orders_cache (
                 order_id, order_num, client_id, client_name, client_email,
                 amount, payment_method, invoice_id, order_status, order_date,
-                has_hosting, has_domain, lineitems_summary,
+                has_hosting, has_domain, has_vps, lineitems_summary,
                 first_detected_at, last_alerted_at, alert_count, is_active_notified
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 1, 0)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 1, 0)
         ");
 
         $updStatusStmt = $pdo->prepare("
@@ -422,6 +427,7 @@ class AmbitionOrderBot {
             // Parse Line Items
             $hasHosting = 0;
             $hasDomain = 0;
+            $hasVps = 0;
             $summaryLines = [];
 
             if (!empty($o['lineitems']['lineitem'])) {
@@ -434,9 +440,15 @@ class AmbitionOrderBot {
                     $cycle = (string)($li['billingcycle'] ?? '');
                     $lAmt  = (float)($li['amount'] ?? 0);
 
-                    if ($lType === 'domain' || (!empty($dName) && empty($pName))) {
+                    if ($lType === 'domain' || (!empty($dName) && empty($pName)) || $pType === 'domain') {
                         $hasDomain = 1;
                         $summaryLines[] = "• 🌐 <b>Domain:</b> " . htmlspecialchars($dName ?: 'Domain Registration') . " (₹" . number_format($lAmt, 2) . ")";
+                    } elseif (preg_match('/vps|server|cloud|rdp|dedicated|kvm/i', $pName) || strpos($pType, 'server') !== false) {
+                        $hasVps = 1;
+                        $desc = $pName ?: 'VPS / Server';
+                        if (!empty($dName)) $desc .= " (" . $dName . ")";
+                        if (!empty($cycle)) $desc .= " [{$cycle}]";
+                        $summaryLines[] = "• ⚡ <b>VPS/Server:</b> " . htmlspecialchars($desc) . " (₹" . number_format($lAmt, 2) . ")";
                     } else {
                         $hasHosting = 1;
                         $desc = $pName ?: 'Web Hosting Package';
@@ -465,7 +477,7 @@ class AmbitionOrderBot {
             $orderLink = whmcs_deep_link('order', $orderId);
 
             // ==========================================
-            // CASE 1: BRAND NEW ORDER DETECTED
+            // CASE 1: BRAND NEW ORDER DETECTED (HIGH-VISIBILITY INSTANT ALERT)
             // ==========================================
             if (!isset($cachedOrders[$orderId])) {
                 $insStmt->execute([
@@ -481,6 +493,7 @@ class AmbitionOrderBot {
                     $orderDate,
                     $hasHosting,
                     $hasDomain,
+                    $hasVps,
                     $itemsSummaryText
                 ]);
                 $cacheRecordId = (int)$pdo->lastInsertId();
@@ -512,8 +525,10 @@ class AmbitionOrderBot {
                 $shouldSendAlert = (!$isInitialBulkSeed) || ($orderStatus === 'Pending') || $isTodayOrder;
 
                 if (($botEnabled === '1' || $manualTrigger) && $shouldSendAlert) {
-                    $badge = ($orderStatus === 'Pending') ? "⚠️ <b>PENDING PROVISIONING</b>" : "✅ <b>ACTIVE</b>";
-                    $tgMsg = ($orderStatus === 'Pending' ? "🚨 <b>NEW PENDING ORDER RECEIVED!</b>\n" : "🛒 <b>NEW WHMCS ORDER RECEIVED!</b>\n")
+                    $badge = ($orderStatus === 'Pending') ? "⚠️ <b>PENDING PROVISIONING</b>" : "✅ <b>ACTIVE (PAID)</b>";
+                    $tgMsg = "🔥🚨 <b>⚡ NEW WHMCS ORDER RECEIVED (JUST NOW)!</b> 🚨🔥\n"
+                           . "━━━━━━━━━━━━━━━━━━━━━━\n"
+                           . "⚡ <b>ATTENTION TEAM: NEW LIVE ORDER ARRIVED!</b>\n"
                            . "━━━━━━━━━━━━━━━━━━━━━━\n"
                            . "📦 <b>Order ID:</b> <code>#{$orderId}</code> (Num: {$orderNum})\n"
                            . "👤 <b>Customer:</b> " . htmlspecialchars($clientName) . " (Client #{$clientId})\n"
@@ -525,10 +540,11 @@ class AmbitionOrderBot {
                            . "🏷 <b>Ordered Services:</b>\n"
                            . $itemsSummaryText . "\n"
                            . "━━━━━━━━━━━━━━━━━━━━━━\n"
-                           . "👥 <b>Immediate Delivery Queue:</b>\n"
-                           . ($hasHosting ? "  • 🚀 Hosting: Chandrika (cPanel & Pass)\n" : "")
-                           . ($hasDomain ? "  • 🌐 Domain: Priya / Sanju (KYC & DNS)\n" : "")
-                           . "👉 <a href=\"{$orderLink}\">Open Order in WHMCS Admin</a>";
+                           . "👥 <b>Immediate Delivery Action:</b>\n"
+                           . ($hasHosting ? "  • 🚀 Hosting: Chandrika (cPanel & Pass Provisioning)\n" : "")
+                           . ($hasDomain ? "  • 🌐 Domain: Priya / Sanju (26-Registrars KYC & DNS Setup)\n" : "")
+                           . ($hasVps ? "  • ⚡ VPS/Server: Root/SSH Provisioning Queue\n" : "")
+                           . "👉 <a href=\"{$orderLink}\"><b>OPEN & PROCESS IN WHMCS ADMIN ➔</b></a>";
 
                     self::sendTelegramHtml($tgMsg);
                     $newOrdersAlerted++;
@@ -547,41 +563,16 @@ class AmbitionOrderBot {
             }
 
             // ==========================================
-            // CASE 2: EXISTING ORDER STILL PENDING (CONTINUOUS ESCALATION)
+            // CASE 2: EXISTING ORDER (CHECK ACTIVATION / STATUS SYNC)
             // ==========================================
             else {
                 $cached = $cachedOrders[$orderId];
                 $cacheRecordId = (int)$cached['id'];
 
                 if ($orderStatus === 'Pending') {
-                    $orderCreatedTs = !empty($o['date']) ? strtotime((string)$o['date']) : (!empty($cached['order_date']) ? strtotime((string)$cached['order_date']) : strtotime((string)$cached['first_detected_at']));
-                    $lastAlertTs = strtotime((string)$cached['last_alerted_at']);
-                    $elapsedMins = (int)floor(($nowTs - $orderCreatedTs) / 60);
-                    if ($elapsedMins < 1) $elapsedMins = 1;
-                    $durationFormatted = self::formatDuration($elapsedMins);
-                    $minsSinceLastAlert = (int)floor(($nowTs - $lastAlertTs) / 60);
-
-                    if (($remindersEnabled === '1' && $minsSinceLastAlert >= $repeatIntervalMins) || $manualTrigger) {
-                        $updAlertStmt->execute(['Pending', $cacheRecordId]);
-
-                        $alertCountNext = (int)$cached['alert_count'] + 1;
-                        $tgMsg = "⚠️ <b>PENDING ORDER ESCALATION ALERT (#{$alertCountNext})</b>\n"
-                               . "━━━━━━━━━━━━━━━━━━━━━━\n"
-                               . "⏳ <b>Order #{$orderId} is still PENDING for {$durationFormatted}!</b>\n"
-                               . "👤 <b>Customer:</b> " . htmlspecialchars($clientName) . " (Client #{$clientId})\n"
-                               . "💰 <b>Amount:</b> ₹" . number_format($amount, 2) . "\n"
-                               . "━━━━━━━━━━━━━━━━━━━━━━\n"
-                               . "🏷 <b>Pending Items:</b>\n"
-                               . $itemsSummaryText . "\n"
-                               . "━━━━━━━━━━━━━━━━━━━━━━\n"
-                               . "🚨 <b>Action Required Until Order is Active:</b>\n"
-                               . ($hasHosting ? "  • 🚀 <b>Chandrika:</b> Please provision cPanel & dispatch pass!\n" : "")
-                               . ($hasDomain ? "  • 🌐 <b>Priya/Sanju:</b> Please verify Registrar KYC & Nameservers!\n" : "")
-                               . "👉 <a href=\"{$orderLink}\">Open & Activate in WHMCS</a>";
-
-                        self::sendTelegramHtml($tgMsg);
-                        $pendingAlerted++;
-                        usleep(350000); // 350ms delay to prevent Telegram 429
+                    // Status is still Pending; kept in cache. Consolidated digest will report it cleanly every 10 mins!
+                    if ($cached['order_status'] !== 'Pending') {
+                        $updStatusStmt->execute(['Pending', 0, $cacheRecordId]);
                     }
                 }
 
@@ -631,6 +622,23 @@ class AmbitionOrderBot {
                         }
                     }
                 } catch (Throwable $e) {}
+            }
+        }
+
+        // 4. Send Consolidated Master Pending Digest every 10 minutes (or if manually triggered)
+        // Groups all pending orders into Domain, Hosting, and VPS/Other categories.
+        $lastDigestTs = (int)get_sys_setting('order_bot_last_digest_at_ts', '0');
+        $minsSinceDigest = ($lastDigestTs > 0) ? (int)floor(($nowTs - $lastDigestTs) / 60) : 999;
+
+        if (($remindersEnabled === '1' && $minsSinceDigest >= $repeatIntervalMins) || $manualTrigger) {
+            $stmtCount = $pdo->query("SELECT COUNT(*) FROM whmcs_orders_cache WHERE order_status = 'Pending'");
+            $pCount = (int)$stmtCount->fetchColumn();
+
+            if ($pCount > 0 || $manualTrigger) {
+                $digestResult = self::sendConsolidatedPendingDigest($manualTrigger);
+                if (!empty($digestResult['sent'])) {
+                    $pendingAlerted = (int)($digestResult['count'] ?? 1);
+                }
             }
         }
 
@@ -686,18 +694,31 @@ class AmbitionOrderBot {
         $summaryLines = [];
         $hasHosting = 0;
         $hasDomain = 0;
+        $hasVps = 0;
         if (!empty($o['lineitems']['lineitem'])) {
             $items = isset($o['lineitems']['lineitem'][0]) ? $o['lineitems']['lineitem'] : [$o['lineitems']['lineitem']];
             foreach ($items as $li) {
                 $lType = strtolower((string)($li['type'] ?? ''));
-                $pName = (string)($li['product'] ?? '');
+                $pType = strtolower((string)($li['producttype'] ?? ''));
+                $pName = (string)($li['product'] ?? ($li['name'] ?? ''));
                 $dName = (string)($li['domain'] ?? '');
-                if ($lType === 'domain' || (!empty($dName) && empty($pName))) {
+                $cycle = (string)($li['billingcycle'] ?? '');
+                $lAmt  = (float)($li['amount'] ?? 0);
+                if ($lType === 'domain' || (!empty($dName) && empty($pName)) || $pType === 'domain') {
                     $hasDomain = 1;
-                    $summaryLines[] = "• 🌐 <b>Domain:</b> " . htmlspecialchars($dName ?: 'Domain Registration');
+                    $summaryLines[] = "• 🌐 <b>Domain:</b> " . htmlspecialchars($dName ?: 'Domain Registration') . " (₹" . number_format($lAmt, 2) . ")";
+                } elseif (preg_match('/vps|server|cloud|rdp|dedicated|kvm/i', $pName) || strpos($pType, 'server') !== false) {
+                    $hasVps = 1;
+                    $desc = $pName ?: 'VPS / Server';
+                    if (!empty($dName)) $desc .= " (" . $dName . ")";
+                    if (!empty($cycle)) $desc .= " [{$cycle}]";
+                    $summaryLines[] = "• ⚡ <b>VPS/Server:</b> " . htmlspecialchars($desc) . " (₹" . number_format($lAmt, 2) . ")";
                 } else {
                     $hasHosting = 1;
-                    $summaryLines[] = "• 🚀 <b>Hosting:</b> " . htmlspecialchars($pName ?: 'Web Hosting') . (!empty($dName) ? " ({$dName})" : "");
+                    $desc = $pName ?: 'Web Hosting Package';
+                    if (!empty($dName)) $desc .= " (" . $dName . ")";
+                    if (!empty($cycle)) $desc .= " [{$cycle}]";
+                    $summaryLines[] = "• 🚀 <b>Hosting:</b> " . htmlspecialchars($desc) . " (₹" . number_format($lAmt, 2) . ")";
                 }
             }
         }
@@ -709,32 +730,36 @@ class AmbitionOrderBot {
             $ins = $pdo->prepare("
                 INSERT INTO whmcs_orders_cache (
                     order_id, order_num, client_id, client_name, amount, payment_method,
-                    invoice_id, order_status, order_date, has_hosting, has_domain, lineitems_summary,
+                    invoice_id, order_status, order_date, has_hosting, has_domain, has_vps, lineitems_summary,
                     first_detected_at, last_alerted_at, alert_count, is_active_notified
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, NOW(), NOW(), 1, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, NOW(), NOW(), 1, ?)
             ");
             $ins->execute([
                 $orderId, $orderNum, $clientId, $clientName, $amount, $payMethod,
-                $invoiceId, $orderStatus, $hasHosting, $hasDomain, $summaryText,
+                $invoiceId, $orderStatus, $hasHosting, $hasDomain, $hasVps, $summaryText,
                 ($orderStatus === 'Active' ? 1 : 0)
             ]);
 
-            // Instant Telegram push!
-            $tgMsg = "⚡ <b>INSTANT ORDER ALERT (0-Second Webhook)</b>\n"
+            // High-visibility Instant Telegram push!
+            $badge = ($orderStatus === 'Pending') ? "⚠️ <b>PENDING PROVISIONING</b>" : "✅ <b>ACTIVE (PAID)</b>";
+            $tgMsg = "🔥🚨 <b>⚡ NEW WHMCS ORDER RECEIVED (0-SECOND HOOK)!</b> 🚨🔥\n"
+                   . "━━━━━━━━━━━━━━━━━━━━━━\n"
+                   . "⚡ <b>ATTENTION TEAM: NEW LIVE ORDER ARRIVED!</b>\n"
                    . "━━━━━━━━━━━━━━━━━━━━━━\n"
                    . "📦 <b>Order ID:</b> <code>#{$orderId}</code> (Num: {$orderNum})\n"
                    . "👤 <b>Customer:</b> " . htmlspecialchars($clientName) . " (Client #{$clientId})\n"
                    . "💰 <b>Amount:</b> ₹" . number_format($amount, 2) . " (" . htmlspecialchars($payMethod) . ")\n"
-                   . "📄 <b>Invoice:</b> #" . ($invoiceId ?: 'N/A') . "\n"
-                   . "⚡ <b>Status:</b> <b>" . htmlspecialchars($orderStatus) . "</b>\n"
+                   . "📄 <b>WHMCS Invoice:</b> #" . ($invoiceId ?: 'N/A') . "\n"
+                   . "⚡ <b>Status:</b> {$badge}\n"
                    . "━━━━━━━━━━━━━━━━━━━━━━\n"
                    . "🏷 <b>Ordered Items:</b>\n"
                    . $summaryText . "\n"
                    . "━━━━━━━━━━━━━━━━━━━━━━\n"
                    . "👥 <b>Immediate Delivery Action:</b>\n"
-                   . ($hasHosting ? "  • 🚀 Hosting: Chandrika (Provision cPanel & Send Pass)\n" : "")
+                   . ($hasHosting ? "  • 🚀 Hosting: Chandrika (cPanel & Pass Provisioning)\n" : "")
                    . ($hasDomain ? "  • 🌐 Domain: Priya / Sanju (26-Registrars KYC Verification)\n" : "")
-                   . "👉 <a href=\"{$orderLink}\">Open Order in WHMCS</a>";
+                   . ($hasVps ? "  • ⚡ VPS/Server: Root/SSH Provisioning Queue\n" : "")
+                   . "👉 <a href=\"{$orderLink}\"><b>OPEN & PROCESS IN WHMCS ADMIN ➔</b></a>";
 
             self::sendTelegramHtml($tgMsg);
         }
@@ -782,37 +807,235 @@ class AmbitionOrderBot {
     }
 
     /**
-     * Alert ALL currently pending orders to Telegram with flood-control throttling
+     * Send Consolidated Master Pending Orders Digest to Telegram (Every 10 Mins)
+     * Categorizes pending orders into:
+     * - Total Pending Domain Order = ?
+     * - Total Hosting Pending Order = ?
+     * - VPS / Other Pending Order = ?
      */
-    public static function alertAllPendingOrders(): array {
+    public static function sendConsolidatedPendingDigest(bool $isManual = false): array {
         self::ensureOrdersSchema();
         $pdo = db();
-        $pending = $pdo->query("SELECT * FROM whmcs_orders_cache WHERE order_status = 'Pending' ORDER BY order_date DESC")->fetchAll();
+        $nowTs = time();
 
-        if (empty($pending)) {
-            return ['status' => 'ok', 'count' => 0, 'message' => 'No pending orders found to alert.'];
-        }
+        $stmt = $pdo->query("SELECT * FROM whmcs_orders_cache WHERE order_status = 'Pending' ORDER BY order_date DESC, id DESC");
+        $pendingOrders = $stmt->fetchAll();
 
-        $sent = 0;
-        $failed = 0;
-        $lastErr = '';
-
-        foreach ($pending as $ord) {
-            $orderId = (int)$ord['order_id'];
-            $res = self::sendManualEscalation($orderId);
-            if ($res['status'] === 'ok') {
-                $sent++;
-            } else {
-                $failed++;
-                $lastErr = $res['message'] ?? 'Failed';
+        if (empty($pendingOrders)) {
+            if ($isManual) {
+                $msg = "✅ <b>WHMCS PENDING ORDERS: ALL CLEAR!</b>\n"
+                     . "━━━━━━━━━━━━━━━━━━━━━━\n"
+                     . "🎉 <i>Koi bhi Pending Order nahi hai! Sabhi active ho chuke hain.</i>\n\n"
+                     . "🌐 Total Pending Domain Order = 0\n"
+                     . "🚀 Total Hosting Pending Order = 0\n"
+                     . "⚡ VPS / Other Pending Order = 0\n"
+                     . "━━━━━━━━━━━━━━━━━━━━━━\n"
+                     . "⏰ <b>Checked:</b> " . date('d M Y, h:i A');
+                self::sendTelegramHtml($msg);
             }
-            usleep(500000); // 500ms throttle between orders to respect Telegram limit
+            return ['status' => 'ok', 'sent' => false, 'count' => 0, 'message' => 'No pending orders found.'];
         }
 
-        if ($sent > 0) {
-            return ['status' => 'ok', 'count' => $sent, 'message' => "🚨 Success! {$sent} Pending Order Alerts dispatched to Telegram!"];
+        $domainItems = [];
+        $hostingItems = [];
+        $vpsItems = [];
+
+        foreach ($pendingOrders as $ord) {
+            $orderId = (int)$ord['order_id'];
+            $orderNum = (string)($ord['order_num'] ?: $orderId);
+            $clientName = trim((string)($ord['client_name'] ?: "Client #{$ord['client_id']}"));
+            $amount = (float)($ord['amount'] ?? 0);
+            $amountFormatted = '₹' . number_format($amount, 2);
+            $orderCreatedTs = !empty($ord['order_date']) ? strtotime((string)$ord['order_date']) : strtotime((string)$ord['first_detected_at']);
+            $elapsedMins = (int)floor(($nowTs - $orderCreatedTs) / 60);
+            if ($elapsedMins < 1) $elapsedMins = 1;
+            $durationFormatted = self::formatDuration($elapsedMins);
+            $orderLink = whmcs_deep_link('order', $orderId);
+
+            $summary = (string)($ord['lineitems_summary'] ?? '');
+            $lines = array_filter(array_map('trim', explode("\n", $summary)));
+
+            $foundCategories = [];
+
+            if (!empty($lines)) {
+                foreach ($lines as $line) {
+                    $cleanLine = preg_replace('/^•\s*/u', '', $line);
+                    $lineLower = strtolower($cleanLine);
+
+                    // Domain detection
+                    if (strpos($lineLower, 'domain') !== false) {
+                        $domainItems[] = [
+                            'order_id' => $orderId,
+                            'item' => $cleanLine,
+                            'client' => $clientName,
+                            'amount' => $amountFormatted,
+                            'duration' => $durationFormatted,
+                            'link' => $orderLink
+                        ];
+                        $foundCategories['domain'] = true;
+                    }
+                    // VPS / Server / Cloud / RDP / Dedicated
+                    elseif (preg_match('/vps|server|cloud|rdp|dedicated|kvm/i', $cleanLine)) {
+                        $vpsItems[] = [
+                            'order_id' => $orderId,
+                            'item' => $cleanLine,
+                            'client' => $clientName,
+                            'amount' => $amountFormatted,
+                            'duration' => $durationFormatted,
+                            'link' => $orderLink
+                        ];
+                        $foundCategories['vps'] = true;
+                    }
+                    // Hosting
+                    elseif (strpos($lineLower, 'hosting') !== false || strpos($lineLower, 'cpanel') !== false || strpos($lineLower, 'reseller') !== false) {
+                        $hostingItems[] = [
+                            'order_id' => $orderId,
+                            'item' => $cleanLine,
+                            'client' => $clientName,
+                            'amount' => $amountFormatted,
+                            'duration' => $durationFormatted,
+                            'link' => $orderLink
+                        ];
+                        $foundCategories['hosting'] = true;
+                    }
+                }
+            }
+
+            // Fallback categorization based on boolean flags or generic fallback
+            if (empty($foundCategories)) {
+                $fallbackItem = "Order #{$orderId} - " . ($summary ?: "WHMCS Service Package");
+                if (!empty($ord['has_domain'])) {
+                    $domainItems[] = [
+                        'order_id' => $orderId,
+                        'item' => $fallbackItem,
+                        'client' => $clientName,
+                        'amount' => $amountFormatted,
+                        'duration' => $durationFormatted,
+                        'link' => $orderLink
+                    ];
+                } elseif (!empty($ord['has_vps'])) {
+                    $vpsItems[] = [
+                        'order_id' => $orderId,
+                        'item' => $fallbackItem,
+                        'client' => $clientName,
+                        'amount' => $amountFormatted,
+                        'duration' => $durationFormatted,
+                        'link' => $orderLink
+                    ];
+                } elseif (!empty($ord['has_hosting'])) {
+                    $hostingItems[] = [
+                        'order_id' => $orderId,
+                        'item' => $fallbackItem,
+                        'client' => $clientName,
+                        'amount' => $amountFormatted,
+                        'duration' => $durationFormatted,
+                        'link' => $orderLink
+                    ];
+                } else {
+                    $vpsItems[] = [
+                        'order_id' => $orderId,
+                        'item' => $fallbackItem,
+                        'client' => $clientName,
+                        'amount' => $amountFormatted,
+                        'duration' => $durationFormatted,
+                        'link' => $orderLink
+                    ];
+                }
+            }
         }
-        return ['status' => 'error', 'message' => "Failed to send alerts: " . $lastErr];
+
+        $totalDomain = count($domainItems);
+        $totalHosting = count($hostingItems);
+        $totalVps = count($vpsItems);
+        $totalAll = count($pendingOrders);
+
+        // Format Domain Section
+        $domainText = "🌐 <b>Total Pending Domain Order = {$totalDomain}</b>\n";
+        if ($totalDomain > 0) {
+            foreach ($domainItems as $di) {
+                $domainText .= "▫️ <b>Order #{$di['order_id']}</b> - {$di['item']}\n"
+                             . "   👤 {$di['client']} | 💰 {$di['amount']} | ⏳ Pending: <b>{$di['duration']}</b>\n"
+                             . "   👉 <a href=\"{$di['link']}\">Open Order #{$di['order_id']}</a>\n\n";
+            }
+        } else {
+            $domainText .= "<i>(Koi Pending Domain Order Nahi Hai ✅)</i>\n\n";
+        }
+
+        // Format Hosting Section
+        $hostingText = "🚀 <b>Total Hosting Pending Order = {$totalHosting}</b>\n";
+        if ($totalHosting > 0) {
+            foreach ($hostingItems as $hi) {
+                $hostingText .= "▫️ <b>Order #{$hi['order_id']}</b> - {$hi['item']}\n"
+                              . "   👤 {$hi['client']} | 💰 {$hi['amount']} | ⏳ Pending: <b>{$hi['duration']}</b>\n"
+                              . "   👉 <a href=\"{$hi['link']}\">Open Order #{$hi['order_id']}</a>\n\n";
+            }
+        } else {
+            $hostingText .= "<i>(Koi Pending Hosting Order Nahi Hai ✅)</i>\n\n";
+        }
+
+        // Format VPS/Other Section
+        $vpsText = "⚡ <b>VPS / Other Pending Order = {$totalVps}</b>\n";
+        if ($totalVps > 0) {
+            foreach ($vpsItems as $vi) {
+                $vpsText .= "▫️ <b>Order #{$vi['order_id']}</b> - {$vi['item']}\n"
+                          . "     👤 {$vi['client']} | 💰 {$vi['amount']} | ⏳ Pending: <b>{$vi['duration']}</b>\n"
+                          . "     👉 <a href=\"{$vi['link']}\">Open Order #{$vi['order_id']}</a>\n\n";
+            }
+        } else {
+            $vpsText .= "<i>(Koi Pending VPS/Server Order Nahi Hai ✅)</i>\n\n";
+        }
+
+        $whmcsPendingUrl = defined('WHMCS_ADMIN_URL') ? WHMCS_ADMIN_URL . '/orders.php?status=Pending' : 'https://www.ambitionhost.in/user/devokedev/orders.php?status=Pending';
+
+        $msg = "📋 <b>WHMCS PENDING ORDERS MASTER DIGEST</b> (10-Min Escalation)\n"
+             . "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+             . $domainText
+             . $hostingText
+             . $vpsText
+             . "━━━━━━━━━━━━━━━━━━━━━━\n"
+             . "⏳ <b>Total Active Pending SLA:</b> {$totalAll} Orders\n"
+             . "👉 <a href=\"{$whmcsPendingUrl}\"><b>Open WHMCS Pending Orders Queue ➔</b></a>";
+
+        $sendRes = self::sendTelegramHtml($msg);
+
+        // Update last alerted timestamps
+        $pdo->exec("UPDATE whmcs_orders_cache SET last_alerted_at = NOW(), alert_count = alert_count + 1 WHERE order_status = 'Pending'");
+
+        try {
+            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('order_bot_last_digest_at_ts', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
+                ->execute([(string)$nowTs]);
+            $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('order_bot_last_digest_at', NOW()) ON DUPLICATE KEY UPDATE setting_value = NOW()")
+                ->execute();
+        } catch (Throwable $e) {}
+
+        return [
+            'status' => $sendRes['status'] ?? 'ok',
+            'sent' => true,
+            'count' => $totalAll,
+            'total_domain' => $totalDomain,
+            'total_hosting' => $totalHosting,
+            'total_vps' => $totalVps,
+            'message' => "Master Pending Digest dispatched ({$totalAll} orders across Domain: {$totalDomain}, Hosting: {$totalHosting}, VPS/Other: {$totalVps})."
+        ];
+    }
+
+    /**
+     * Alert ALL currently pending orders to Telegram via Consolidated Master Digest
+     */
+    public static function alertAllPendingOrders(): array {
+        $res = self::sendConsolidatedPendingDigest(true);
+        if (!empty($res['sent'])) {
+            return [
+                'status' => 'ok',
+                'count' => $res['count'],
+                'message' => "📋 Master Pending Digest Dispatched to Telegram! (Domain: {$res['total_domain']}, Hosting: {$res['total_hosting']}, VPS/Other: {$res['total_vps']})"
+            ];
+        }
+        return [
+            'status' => 'ok',
+            'count' => 0,
+            'message' => "✅ Sabhi orders active hain! Abhi koi pending order nahi hai."
+        ];
     }
 
     /**

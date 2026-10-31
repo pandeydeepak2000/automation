@@ -310,8 +310,8 @@ if ($activeModId === 3):
         <div>
           <label style="font-size:11px;font-weight:700;color:#475569;display:block;margin-bottom:4px">Reminder Repeat Interval</label>
           <select name="order_bot_reminder_interval_mins" style="width:100%">
-            <option value="10" <?=$botStatus['reminder_interval_mins']==10?'selected':''?>>Every 10 Minutes (High SLA / Flash Sales)</option>
-            <option value="15" <?=$botStatus['reminder_interval_mins']==15?'selected':''?>>Every 15 Minutes (Standard Recommended)</option>
+            <option value="10" <?=$botStatus['reminder_interval_mins']==10?'selected':''?>>Every 10 Minutes (Recommended Master Digest)</option>
+            <option value="15" <?=$botStatus['reminder_interval_mins']==15?'selected':''?>>Every 15 Minutes</option>
             <option value="30" <?=$botStatus['reminder_interval_mins']==30?'selected':''?>>Every 30 Minutes</option>
             <option value="60" <?=$botStatus['reminder_interval_mins']==60?'selected':''?>>Every 1 Hour</option>
           </select>
@@ -412,10 +412,10 @@ if ($activeModId === 3):
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
       <div>
         <h4 style="margin:0;font-size:14px;color:#334155">⚡ Active Pending Orders (SLA Auto-Escalation Active)</h4>
-        <small style="color:#64748b">जब तक ऑर्डर Active नहीं होगा, तब तक बॉट हर <?=$botStatus['reminder_interval_mins']?> मिनट पर रिमाइंडर भेजता रहेगा।</small>
+        <small style="color:#64748b">जब तक ऑर्डर Active नहीं होगा, तब तक बॉट हर <?=$botStatus['reminder_interval_mins']?> मिनट पर Master Digest रिमाइंडर भेजता रहेगा।</small>
       </div>
       <?php if (count($pendingOrders) > 0): ?>
-        <button type="button" class="btn-primary" style="background:#dc2626;border-color:#dc2626;font-size:12px;padding:6px 12px" onclick="alertAllPendingOrders()">🚨 Alert All <?=count($pendingOrders)?> Pending Orders to Telegram</button>
+        <button type="button" class="btn-primary" style="background:#dc2626;border-color:#dc2626;font-size:12px;padding:6px 12px" onclick="alertAllPendingOrders()">📋 Send Master Pending Digest (<?=count($pendingOrders)?>) to Telegram</button>
       <?php endif; ?>
     </div>
     <table>
