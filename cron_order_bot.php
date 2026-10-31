@@ -18,7 +18,9 @@ if (!$isCli && $key !== 'ambition_cron_2026') {
     }
 }
 
-header('Content-Type: application/json; charset=utf-8');
+if (php_sapi_name() !== 'cli' && !headers_sent()) {
+    header('Content-Type: application/json; charset=utf-8');
+}
 
 // Simple Lock mechanism to prevent overlapping executions
 $lockFile = sys_get_temp_dir() . '/ambition_order_bot.lock';
