@@ -232,6 +232,7 @@ if ($activeModId === 3):
 
   $pendingHostingCount = (int)$pdo->query("SELECT COUNT(*) FROM whmcs_orders_cache WHERE order_status = 'Pending' AND has_hosting = 1")->fetchColumn();
   $pendingDomainCount  = (int)$pdo->query("SELECT COUNT(*) FROM whmcs_orders_cache WHERE order_status = 'Pending' AND has_domain = 1")->fetchColumn();
+  $showSettingsByDefault = (!$botStatus['is_configured'] || isset($_GET['bot_settings']));
 ?>
 <div class="box" style="border-left:4px solid #059669">
   <!-- HEADER & CONTROLS -->
@@ -242,7 +243,7 @@ if ($activeModId === 3):
         <?php if ($botStatus['is_configured']): ?>
           <span class="pill pill-green">🟢 Telegram Order Bot Active</span>
         <?php else: ?>
-          <span class="pill pill-red">⚠️ Telegram Bot Token Needed</span>
+          <button type="button" class="pill pill-red" onclick="toggleElement('orderBotSettingsPanel')" style="border:none;cursor:pointer;animation:pulse 1.5s infinite">⚠️ Telegram Bot Token Needed (यहाँ क्लिक करके Setup करें) ⚙️</button>
         <?php endif; ?>
         <?php if ($botStatus['reminders_enabled']): ?>
           <span class="pill pill-blue">⏱ Repeating Alert: Every <?=$botStatus['reminder_interval_mins']?>m until Active</span>
@@ -256,18 +257,21 @@ if ($activeModId === 3):
       <button type="button" class="btn-primary" style="background:#059669;border-color:#059669" onclick="runOrderBotCheck()">🔄 Check & Sync Orders Now</button>
       <button type="button" class="btn-primary" style="background:#2563eb;border-color:#2563eb" onclick="testTelegramBot()">📲 Test Telegram Bot</button>
       <?php if ($isAdmin): ?>
-        <button type="button" class="btn-dark" onclick="toggleElement('orderBotSettingsPanel')">⚙️ Bot Settings</button>
+        <button type="button" class="btn-dark" style="background:#0f172a;color:#38bdf8" onclick="toggleElement('orderBotSettingsPanel')">⚙️ Bot Settings</button>
       <?php endif; ?>
       <button type="button" class="btn-dark" style="background:#7c3aed;color:#fff;border-color:#7c3aed" onclick="toggleElement('whmcsHookGuidePanel')">⚡ 0-Second Hook</button>
       <a class="btn-dark" href="<?=htmlspecialchars(whmcs_deep_link('pending_orders'))?>" target="_blank">WHMCS Orders ↗</a>
     </div>
   </div>
 
-  <!-- ADMIN BOT CONFIGURATION PANEL (COLLAPSIBLE) -->
-  <div id="orderBotSettingsPanel" style="display:none;margin-top:16px;background:#f8fafc;padding:16px;border-radius:10px;border:1px solid #cbd5e1">
+  <!-- ADMIN BOT CONFIGURATION PANEL (COLLAPSIBLE / VISIBLE IF NOT CONFIGURED) -->
+  <div id="orderBotSettingsPanel" style="display:<?=$showSettingsByDefault?'block':'none'?>;margin-top:16px;background:#f8fafc;padding:16px;border-radius:10px;border:2px solid #2563eb">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <strong style="color:#0f172a;font-size:15px">⚙️ 24×7 Telegram Order Bot & Escalation Settings (Admin Only)</strong>
-      <button type="button" onclick="toggleElement('orderBotSettingsPanel')" style="padding:2px 8px;font-size:12px">✕ Close</button>
+      <div>
+        <strong style="color:#0f172a;font-size:16px">⚙️ 24×7 Telegram Order Bot & Escalation Settings (Admin Center)</strong>
+        <small style="color:#64748b;display:block">Telegram Bot Token और Chat ID यहाँ डालें और Save करें।</small>
+      </div>
+      <button type="button" onclick="toggleElement('orderBotSettingsPanel')" style="padding:4px 10px;font-size:12px">✕ Hide</button>
     </div>
     <form id="orderBotSettingsForm" onsubmit="saveOrderBotSettings(event)">
       <input type="hidden" name="action" value="save_system_settings">

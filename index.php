@@ -148,7 +148,7 @@ dialog{border:1px solid #cbd5e1;border-radius:14px;padding:22px;max-width:680px;
     <div style="font-size:10px;font-weight:800;color:#64748b;margin:10px 8px 4px;text-transform:uppercase">Allowed Modules (<?=count($allowedModuleIds)?>/25)</div>
     <?php foreach ($allowedModuleIds as $id): $m = $MODULES[$id]; ?>
       <a href="index.php?m=<?=$id?>" class="nav <?=($view==='m' && $activeModId===$id)?'active':''?>">
-        <span class="navnum"><?=sprintf('%02d', $id)?></span><?=htmlspecialchars($m[0])?>
+        <span class="navnum"><?=sprintf('%02d', $id)?></span><?=htmlspecialchars($m[0])?><?php if ($id === 3): ?><span class="pill pill-green" style="font-size:9px;padding:1px 6px;margin-left:5px">BOT 🤖</span><?php endif; ?>
       </a>
     <?php endforeach; ?>
   </aside>
@@ -242,13 +242,22 @@ dialog{border:1px solid #cbd5e1;border-radius:14px;padding:22px;max-width:680px;
         <?php foreach ($allowedModuleIds as $id): $m = $MODULES[$id]; ?>
           <div class="module-card">
             <div>
-              <span class="pill pill-blue"><?=sprintf('%02d', $id)?> · <?=$m[1]?></span>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                <span class="pill pill-blue"><?=sprintf('%02d', $id)?> · <?=$m[1]?></span>
+                <?php if ($id === 3): ?>
+                  <span class="pill pill-green" style="font-size:10px">🤖 24×7 Telegram Watchdog</span>
+                <?php endif; ?>
+              </div>
               <h3 style="margin:9px 0 5px;font-size:15px"><?=htmlspecialchars($m[0])?></h3>
               <p style="font-size:12px;color:#475569;margin:0"><?=htmlspecialchars($m[2])?></p>
             </div>
             <div class="toolbar" style="margin:8px 0 0;justify-content:space-between">
               <a href="index.php?m=<?=$id?>" class="btn-primary" style="text-decoration:none;padding:7px 12px;border-radius:8px;font-size:12px">Open Module + AI →</a>
-              <a href="<?=htmlspecialchars($m[3])?>" target="_blank" class="btn-dark">WHMCS ↗</a>
+              <?php if ($id === 3): ?>
+                <a href="index.php?m=3&bot_settings=1" class="btn-dark" style="font-size:11px;padding:6px 9px">⚙️ Bot Settings</a>
+              <?php else: ?>
+                <a href="<?=htmlspecialchars($m[3])?>" target="_blank" class="btn-dark">WHMCS ↗</a>
+              <?php endif; ?>
             </div>
           </div>
         <?php endforeach; ?>
