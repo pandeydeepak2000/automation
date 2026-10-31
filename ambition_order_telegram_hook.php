@@ -73,3 +73,4 @@ add_hook('OrderPaid', 1, function($vars) {
 add_hook('AcceptOrder', 1, function($vars) {
     ambition_send_order_to_master_os($vars, 'AcceptOrder');
 });
+
