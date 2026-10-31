@@ -503,9 +503,13 @@ class AmbitionOrderBot {
                         ]);
                 }
 
-                // Fire Instant Telegram Notification ONLY if order is Pending or placed recently (< 2 hours ago)
-                $orderAgeHours = ($nowTs - strtotime($orderDate)) / 3600;
-                $shouldSendAlert = ($orderStatus === 'Pending' || $orderAgeHours <= 2);
+                // Always send Telegram Alert for new orders:
+                // 1. If cache was already established, ANY new order that appears is a genuine new order!
+                // 2. If it's a Pending order, always alert!
+                // 3. If placed today/recently, always alert!
+                $isInitialBulkSeed = (count($cachedOrders) === 0);
+                $isTodayOrder = (abs($nowTs - strtotime($orderDate)) <= 86400);
+                $shouldSendAlert = (!$isInitialBulkSeed) || ($orderStatus === 'Pending') || $isTodayOrder;
 
                 if (($botEnabled === '1' || $manualTrigger) && $shouldSendAlert) {
                     $badge = ($orderStatus === 'Pending') ? "⚠️ <b>PENDING PROVISIONING</b>" : "✅ <b>ACTIVE</b>";
@@ -658,12 +662,13 @@ class AmbitionOrderBot {
 
         // Query WHMCS specifically for this Order
         $res = AmbitionInfraSync::callWhmcs('GetOrders', ['id' => $orderId]);
-        if (empty($res['orders']['order'][0])) {
+        $orders = self::extractOrdersList($res);
+        if (empty($orders[0])) {
             // If API didn't return order array, trigger syncAndCheckOrders immediately
             return self::syncAndCheckOrders(true);
         }
 
-        $o = $res['orders']['order'][0];
+        $o = $orders[0];
         $orderNum = (string)($o['ordernum'] ?? $orderId);
         $clientId = (int)($o['userid'] ?? 0);
         $clientName = trim((string)($o['name'] ?? ''));
